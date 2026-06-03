@@ -56,9 +56,10 @@ export default async function TileDetail({
     message: `Hola, me interesa el azulejo "${tile.name}"${tile.sku ? ` (ref. ${tile.sku})` : ''}. ¿Me podéis dar más información?`,
   })
 
-  const galleryImages = [tile.mainImage, ...(tile.gallery?.map((g: any) => g.image) || [])].filter(
-    Boolean,
-  )
+  const ambient = tile.mainImage
+  const texture = tile.textureImage
+  // Solo mostramos la textura como bloque aparte si es distinta de la imagen ambiente.
+  const showTextureBlock = texture && ambient && texture.id !== ambient.id
 
   const attributes = [
     { label: 'Colección', value: tile.collection?.name },
@@ -72,13 +73,14 @@ export default async function TileDetail({
   ].filter((a) => a.value)
 
   return (
-    <div className="container py-8 md:py-12 grid md:grid-cols-2 gap-10">
-      <div className="space-y-3">
-        <div className="aspect-square relative overflow-hidden rounded-lg bg-muted">
-          {tile.mainImage?.url && (
+    <div className="container py-8 md:py-12 grid md:grid-cols-2 gap-8 lg:gap-12">
+      {/* Columna izquierda: imagen de ambiente grande */}
+      <div className="md:sticky md:top-24 md:self-start">
+        <div className="aspect-[4/5] relative overflow-hidden rounded-lg bg-muted">
+          {ambient?.url && (
             <Image
-              src={tile.mainImage.url}
-              alt={tile.mainImage.alt || tile.name}
+              src={ambient.url}
+              alt={ambient.alt || `${tile.name} en ambiente`}
               fill
               priority
               loading="eager"
@@ -87,26 +89,10 @@ export default async function TileDetail({
             />
           )}
         </div>
-        {galleryImages.length > 1 && (
-          <div className="grid grid-cols-4 gap-2">
-            {galleryImages.slice(0, 8).map((img: any, i: number) => (
-              <div key={i} className="aspect-square relative rounded bg-muted overflow-hidden">
-                {img?.url && (
-                  <Image
-                    src={img.url}
-                    alt={img.alt || ''}
-                    fill
-                    loading="eager"
-                    sizes="120px"
-                    className="object-cover"
-                  />
-                )}
-              </div>
-            ))}
-          </div>
-        )}
+        <p className="text-xs text-muted-foreground mt-2 text-center">Imagen de ambiente</p>
       </div>
 
+      {/* Columna derecha: info, CTAs, atributos y detalle del azulejo */}
       <div className="space-y-6">
         <div className="space-y-2">
           {tile.collection?.name && (
@@ -148,6 +134,23 @@ export default async function TileDetail({
             </div>
           ))}
         </dl>
+
+        {/* Detalle del azulejo (textura) — solo si tenemos una imagen distinta a la de ambiente */}
+        {showTextureBlock && (
+          <div className="border-t border-border pt-6">
+            <p className="text-xs uppercase tracking-wider text-muted-foreground mb-3">
+              Detalle del azulejo
+            </p>
+            <div className="relative overflow-hidden rounded-lg bg-muted border border-border">
+              <img
+                src={texture.url}
+                alt={`Textura de ${tile.name}`}
+                loading="eager"
+                className="block w-full h-auto object-contain"
+              />
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )

@@ -19,6 +19,7 @@ import { Ambients } from './collections/Ambients'
 import { Leads } from './collections/Leads'
 import { SimulatorSessions } from './collections/SimulatorSessions'
 import { Generations } from './collections/Generations'
+import { PdfImports } from './collections/PdfImports'
 import { SiteSettings } from './globals/SiteSettings'
 
 const filename = fileURLToPath(import.meta.url)
@@ -51,6 +52,8 @@ export default buildConfig({
     // Simulador
     SimulatorSessions,
     Generations,
+    // Importación
+    PdfImports,
     // Sistema
     Users,
     Media,

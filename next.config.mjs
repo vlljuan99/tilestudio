@@ -17,6 +17,8 @@ const nextConfig = {
   experimental: {
     reactCompiler: false,
   },
+  // Paquetes con binarios nativos que webpack no debe procesar.
+  serverExternalPackages: ['@napi-rs/canvas', 'pdfjs-dist', 'sharp'],
 }
 
 export default withPayload(nextConfig, { devBundleServerPackages: false })

@@ -79,6 +79,7 @@ export interface Config {
     leads: Lead;
     'simulator-sessions': SimulatorSession;
     generations: Generation;
+    'pdf-imports': PdfImport;
     users: User;
     media: Media;
     'payload-kv': PayloadKv;
@@ -100,6 +101,7 @@ export interface Config {
     leads: LeadsSelect<false> | LeadsSelect<true>;
     'simulator-sessions': SimulatorSessionsSelect<false> | SimulatorSessionsSelect<true>;
     generations: GenerationsSelect<false> | GenerationsSelect<true>;
+    'pdf-imports': PdfImportsSelect<false> | PdfImportsSelect<true>;
     users: UsersSelect<false> | UsersSelect<true>;
     media: MediaSelect<false> | MediaSelect<true>;
     'payload-kv': PayloadKvSelect<false> | PayloadKvSelect<true>;
@@ -484,6 +486,69 @@ export interface Generation {
   createdAt: string;
 }
 /**
+ * Sube un catálogo en PDF de un proveedor y conviértelo automáticamente en azulejos de tu catálogo.
+ *
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "pdf-imports".
+ */
+export interface PdfImport {
+  id: number;
+  /**
+   * Se calcula automáticamente con el nombre del fichero y la marca.
+   */
+  displayName?: string | null;
+  /**
+   * Sube el catálogo en PDF del proveedor.
+   */
+  originalFile: number | Media;
+  /**
+   * Opcional. Si no se indica, intentaremos detectarla automáticamente del propio PDF.
+   */
+  brand?: (number | null) | Brand;
+  /**
+   * Rango de páginas a procesar.
+   */
+  pageRangeFrom?: number | null;
+  /**
+   * Dejar vacío para procesar hasta el final.
+   */
+  pageRangeTo?: number | null;
+  /**
+   * Hard cap de páginas a procesar en esta ejecución (control de coste). Sube cuando confirmes calidad.
+   */
+  maxPages?: number | null;
+  status?: ('queued' | 'processing' | 'review_ready' | 'importing' | 'completed' | 'failed') | null;
+  totalPages?: number | null;
+  processedPages?: number | null;
+  progressPercent?: number | null;
+  /**
+   * Lo que el worker está haciendo ahora mismo.
+   */
+  currentStep?: string | null;
+  candidatesCount?: number | null;
+  /**
+   * Array de candidatos JSON: cada elemento es un azulejo identificado con su info y estado de revisión (pending/accepted/rejected). Editable desde la vista de revisión.
+   */
+  extractedItems?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
+  errorMessage?: string | null;
+  startedAt?: string | null;
+  completedAt?: string | null;
+  /**
+   * Azulejos generados al publicar los aceptados.
+   */
+  createdTiles?: (number | Tile)[] | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
  * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "users".
  */
@@ -581,6 +646,10 @@ export interface PayloadLockedDocument {
     | ({
         relationTo: 'generations';
         value: number | Generation;
+      } | null)
+    | ({
+        relationTo: 'pdf-imports';
+        value: number | PdfImport;
       } | null)
     | ({
         relationTo: 'users';
@@ -819,6 +888,31 @@ export interface GenerationsSelect<T extends boolean = true> {
   costCents?: T;
   latencyMs?: T;
   errorMessage?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "pdf-imports_select".
+ */
+export interface PdfImportsSelect<T extends boolean = true> {
+  displayName?: T;
+  originalFile?: T;
+  brand?: T;
+  pageRangeFrom?: T;
+  pageRangeTo?: T;
+  maxPages?: T;
+  status?: T;
+  totalPages?: T;
+  processedPages?: T;
+  progressPercent?: T;
+  currentStep?: T;
+  candidatesCount?: T;
+  extractedItems?: T;
+  errorMessage?: T;
+  startedAt?: T;
+  completedAt?: T;
+  createdTiles?: T;
   updatedAt?: T;
   createdAt?: T;
 }
