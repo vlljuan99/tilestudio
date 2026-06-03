@@ -108,7 +108,8 @@ export function SimulatorWizard({ initialTile, catalog }: Props) {
       const data = await res.json()
 
       if (!res.ok) {
-        throw new Error(data?.error || 'No se pudo generar la simulación.')
+        const detail = data?.detail ? ` (${data.detail})` : ''
+        throw new Error((data?.error || 'No se pudo generar la simulación.') + detail)
       }
 
       if (data.sessionToken) {

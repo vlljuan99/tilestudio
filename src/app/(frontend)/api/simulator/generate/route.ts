@@ -30,13 +30,13 @@ async function fetchTileTexture(payload: any, tileId: number | string): Promise<
 
     const mediaId = typeof textureRel === 'object' ? textureRel.id : textureRel
     const media = await payload.findByID({ collection: 'media', id: mediaId })
-    if (!media?.url) return null
+    if (!media?.filename) return null
 
-    const base = process.env.NEXT_PUBLIC_SERVER_URL || 'http://localhost:3000'
-    const url = media.url.startsWith('http') ? media.url : `${base}${media.url}`
-    const res = await fetch(url)
-    if (!res.ok) return null
-    return Buffer.from(await res.arrayBuffer())
+    // Leer desde disco para evitar dependencia del puerto del servidor
+    const { readFile } = await import('fs/promises')
+    const { join } = await import('path')
+    const filePath = join(process.cwd(), 'media', media.filename)
+    return await readFile(filePath)
   } catch (err) {
     console.error('fetchTileTexture error', err)
     return null

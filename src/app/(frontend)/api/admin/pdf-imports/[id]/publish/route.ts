@@ -193,7 +193,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           format: formatDoc?.id,
           usages: usageDocs.filter(Boolean).map((d: any) => d.id),
           rooms: roomDocs.filter(Boolean).map((d: any) => d.id),
-          published: false, // se publican manualmente después de revisar imagen
+          published: true,
           featured: false,
           aiReady: false,
         } as any,

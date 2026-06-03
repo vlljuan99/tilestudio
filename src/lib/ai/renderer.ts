@@ -153,6 +153,89 @@ export class OpenAIImageProvider implements RenderingProvider {
   }
 }
 
+// -- Gemini Image provider ---------------------------------------------------
+
+import { GoogleGenAI } from '@google/genai'
+
+type GeminiProviderConfig = {
+  apiKey: string
+  /** Modelo de generación de imagen. Por defecto: gemini-2.5-flash-image */
+  model?: string
+  /** Coste estimado en centavos por imagen generada. */
+  costPerImageCents?: number
+}
+
+export class GeminiImageProvider implements RenderingProvider {
+  readonly id: string
+  private client: GoogleGenAI
+  private model: string
+  private costPerImageCents: number
+
+  constructor(cfg: GeminiProviderConfig) {
+    this.client = new GoogleGenAI({ apiKey: cfg.apiKey })
+    this.model = cfg.model || 'gemini-2.5-flash-image'
+    this.id = `gemini:${this.model}`
+    this.costPerImageCents = cfg.costPerImageCents ?? 4
+  }
+
+  async generate(req: RenderRequest): Promise<RenderResult> {
+    const prompt = buildPrompt(req)
+    const started = Date.now()
+
+    // Imagen base + texturas de azulejos como partes inline
+    const parts: any[] = [
+      { text: prompt },
+      {
+        inlineData: {
+          mimeType: req.baseImageMimeType || 'image/jpeg',
+          data: req.baseImage.toString('base64'),
+        },
+      },
+      ...req.placements.map((p) => ({
+        inlineData: {
+          mimeType: 'image/jpeg',
+          data: p.textureImage.toString('base64'),
+        },
+      })),
+    ]
+
+    const result = await this.client.models.generateContent({
+      model: this.model,
+      contents: [{ role: 'user', parts }],
+      config: {
+        responseModalities: ['TEXT', 'IMAGE'],
+      },
+    })
+
+    const candidates = result.candidates ?? []
+    console.log(`[Gemini] candidates=${candidates.length}, parts=${candidates[0]?.content?.parts?.length ?? 0}`)
+    if (candidates[0]?.content?.parts) {
+      for (const p of candidates[0].content.parts as any[]) {
+        console.log(`[Gemini] part: text=${!!p.text} inlineData=${!!p.inlineData} mime=${p.inlineData?.mimeType}`)
+      }
+    }
+
+    const imagePart = candidates[0]?.content?.parts?.find(
+      (p: any) => p.inlineData?.mimeType?.startsWith('image/'),
+    )
+    if (!imagePart?.inlineData?.data) {
+      throw new Error(`Gemini no devolvió imagen en la respuesta (candidates=${candidates.length})`)
+    }
+
+    const imageBuffer = Buffer.from(imagePart.inlineData.data, 'base64')
+    const mimeType: string = imagePart.inlineData.mimeType || 'image/png'
+
+    return {
+      imageBuffer,
+      mimeType,
+      provider: this.id,
+      promptUsed: prompt,
+      costCents: this.costPerImageCents,
+      latencyMs: Date.now() - started,
+    }
+  }
+}
+
 // -- Mock provider (para desarrollo sin API key) -----------------------------
 
 import sharp from 'sharp'
@@ -201,10 +284,38 @@ export class MockProvider implements RenderingProvider {
 
 // -- Factory ----------------------------------------------------------------
 
+/**
+ * Devuelve el proveedor de renderizado según las variables de entorno.
+ *
+ * Selección (en orden de prioridad):
+ *   1. AI_PROVIDER=gemini|openai|mock → fuerza el proveedor
+ *   2. GOOGLE_API_KEY presente        → usa Gemini automáticamente (~4× más barato, ~6× más rápido)
+ *   3. OPENAI_API_KEY presente        → usa OpenAI gpt-image-1
+ *   4. Sin keys                       → MockProvider (desarrollo)
+ */
 export function getRenderingProvider(): RenderingProvider {
-  const key = process.env.OPENAI_API_KEY
-  if (key && key.length > 10) {
+  const forcedProvider = process.env.AI_PROVIDER // 'gemini' | 'openai' | 'mock' | undefined
+
+  if (forcedProvider === 'mock') return new MockProvider()
+
+  if (forcedProvider === 'openai') {
+    const key = process.env.OPENAI_API_KEY
+    if (!key) throw new Error('Falta OPENAI_API_KEY (AI_PROVIDER=openai)')
     return new OpenAIImageProvider({ apiKey: key })
   }
+
+  if (forcedProvider === 'gemini') {
+    const key = process.env.GOOGLE_API_KEY
+    if (!key) throw new Error('Falta GOOGLE_API_KEY (AI_PROVIDER=gemini)')
+    return new GeminiImageProvider({ apiKey: key })
+  }
+
+  // Auto-detect: Gemini primero (más rápido y barato), luego OpenAI, luego Mock
+  const gKey = process.env.GOOGLE_API_KEY
+  if (gKey && gKey.length > 10) return new GeminiImageProvider({ apiKey: gKey })
+
+  const oKey = process.env.OPENAI_API_KEY
+  if (oKey && oKey.length > 10) return new OpenAIImageProvider({ apiKey: oKey })
+
   return new MockProvider()
 }

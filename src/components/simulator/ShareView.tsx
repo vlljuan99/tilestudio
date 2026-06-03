@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { Sparkles, MessageCircle, Mail, Phone, Copy, Check, RefreshCw } from 'lucide-react'
@@ -44,14 +44,17 @@ export function ShareView({
   const [activeId, setActiveId] = useState<string | number>(latest.id)
   const [modalOpen, setModalOpen] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [shareUrl, setShareUrl] = useState('')
+
+  useEffect(() => {
+    setShareUrl(window.location.href)
+  }, [])
 
   const active = generations.find((g) => g.id === activeId) || latest
   const tile = active.tile
   const surfaceLabel = (active.surfaces || [])
     .map((s) => (s === 'floor' ? 'suelo' : 'pared'))
     .join(' + ')
-
-  const shareUrl = typeof window !== 'undefined' ? window.location.href : ''
 
   const waMessage = `Hola, vengo del simulador de ${settings?.siteName || 'Tilestudio'}.
 Me interesa el azulejo "${tile?.name}"${tile?.sku ? ` (ref. ${tile.sku})` : ''}.

@@ -11,14 +11,16 @@
  * Diseñado como "fire and forget" desde un Route Handler de Next: el handler
  * dispara el worker y devuelve inmediatamente. El front-end pollea el DB para
  * ver el progreso.
+ *
+ * Proveedor de visión: se selecciona automáticamente via getVisionExtractor().
+ * Por defecto Gemini 2.5 Flash (GOOGLE_API_KEY). Fallback a gpt-4o-mini (OPENAI_API_KEY).
+ * Forzar con AI_VISION_PROVIDER=gemini|openai.
  */
 import { getPayload } from 'payload'
-import OpenAI from 'openai'
 import sharp from 'sharp'
 import config from '@payload-config'
 import { loadPdf, iteratePages, getTotalPages } from './extractor'
-
-const MODEL = 'gpt-4o-mini'
+import { getVisionExtractor, type ExtractionResult } from '../ai/vision'
 
 export type Candidate = {
   id: string
@@ -50,95 +52,6 @@ export type Candidate = {
 }
 
 type BBox = [number, number, number, number]
-type LLMProduct = Omit<
-  Candidate,
-  'id' | 'page' | 'reviewStatus' | 'pageImageUrl' | 'textureImageUrl' | 'ambientImageUrl'
->
-
-type ExtractionResult = {
-  products: LLMProduct[]
-  brandDetected?: string | null
-  collectionDetected?: string | null
-  /** Bounding box [x1,y1,x2,y2] normalizado 0-1 de la foto ambiente principal de la página (si la hay). */
-  ambientBbox?: BBox | null
-}
-
-const SYSTEM_PROMPT = `Eres un asistente que extrae información de catálogos de azulejos de fabricantes españoles.
-
-Recibirás la imagen de una o dos páginas (un spread) de un catálogo en PDF.
-Tu tarea es identificar cada AZULEJO PRESENTADO COMO VARIANTE INDIVIDUAL y devolver, para cada uno, su información Y las coordenadas de su textura en la imagen, junto con la coordenada de la foto ambiente si existe.
-
-Reglas de contenido:
-- Una "serie" o "colección" puede contener varias variantes (ej. "Alloy" contiene Alloy Azzurro, Alloy Pearl, Alloy Mint, etc.). Cada variante es un producto separado.
-- Si en la página solo hay texto introductorio sin productos identificables, devuelve products: [].
-- Los formatos van en cm (ej. "60x120", "30x90", "20x20"). Excluye pulgadas.
-- Los acabados típicos: Matt, Lapatto, Brillo, Pulido, Satinado, Antideslizante.
-- El SKU/código (ej. "SOL23", "SOL28") suele aparecer en la columna "Cód. tarif." y aplica al formato. Si hay varios, devuélvelos como string concatenado.
-- Usos: "suelo interior", "pared baño", "pared cocina", "exterior". Infiérelos por las normas R10/R11 y por contexto visual.
-- Estancias: baño, cocina, salón, dormitorio, exterior. Infiérelas por las fotos ambiente.
-
-Reglas de coordenadas (CRÍTICO):
-- Todas las coordenadas son normalizadas 0-1: x1 e y1 esquina superior izquierda, x2 e y2 esquina inferior derecha, sobre la imagen completa que recibes.
-- "ambientBbox": el rectángulo que encierra la foto FOTOGRÁFICA de la estancia con muebles. Si no hay foto ambiente, devuelve null.
-- "textureBbox" (por cada variante): el rectángulo que encierra la textura/swatch de ESA variante (sin nombre debajo, sin marco). Cada variante tiene su propio rectángulo distinto del de las demás.
-- Si no puedes determinar con seguridad la bbox de una variante, devuelve null para esa textureBbox.
-
-Devuelve JSON estricto con esta forma:
-{
-  "brandDetected": "Pamesa" | null,
-  "collectionDetected": "Solid" | null,
-  "ambientBbox": [0.05, 0.12, 0.45, 0.88] | null,
-  "products": [
-    {
-      "seriesName": "Alloy",
-      "variantName": "Alloy Azzurro",
-      "sku": "SOL23 / SOL28",
-      "formats": ["60x120", "60x60"],
-      "finishes": ["Matt", "Lapatto"],
-      "dominantColor": "azul/turquesa metálico",
-      "description": "Apariencia metálica oxidada en tono azul-turquesa.",
-      "usage": ["pared baño", "suelo interior"],
-      "rooms": ["baño"],
-      "textureBbox": [0.51, 0.18, 0.68, 0.34]
-    }
-  ]
-}`
-
-async function callVisionLLM(
-  client: OpenAI,
-  imageBase64: string,
-  pageText: string,
-): Promise<ExtractionResult> {
-  const response = await client.chat.completions.create({
-    model: MODEL,
-    response_format: { type: 'json_object' },
-    messages: [
-      { role: 'system', content: SYSTEM_PROMPT },
-      {
-        role: 'user',
-        content: [
-          {
-            type: 'text',
-            text: `Texto extraído de la página (úsalo como referencia para nombres y códigos exactos):\n\n${pageText.slice(0, 4000)}`,
-          },
-          {
-            type: 'image_url',
-            image_url: { url: `data:image/jpeg;base64,${imageBase64}`, detail: 'high' },
-          },
-        ],
-      },
-    ],
-  })
-
-  const content = response.choices[0]?.message?.content
-  if (!content) return { products: [] }
-  try {
-    return JSON.parse(content) as ExtractionResult
-  } catch (err) {
-    console.warn('No se pudo parsear JSON de la LLM:', content.slice(0, 200))
-    return { products: [] }
-  }
-}
 
 function makeCandidateId(page: number, idx: number): string {
   return `p${page}_${idx}_${Math.random().toString(36).slice(2, 8)}`
@@ -222,12 +135,10 @@ async function uploadMedia(
 
 async function fetchPdfBuffer(payload: any, mediaId: number | string): Promise<Buffer> {
   const media = await payload.findByID({ collection: 'media', id: mediaId })
-  if (!media?.url) throw new Error('PDF Media no tiene URL')
-  const base = process.env.NEXT_PUBLIC_SERVER_URL || 'http://localhost:3000'
-  const url = media.url.startsWith('http') ? media.url : `${base}${media.url}`
-  const res = await fetch(url)
-  if (!res.ok) throw new Error(`No se pudo descargar el PDF: ${res.status}`)
-  return Buffer.from(await res.arrayBuffer())
+  if (!media?.filename) throw new Error('PDF Media no tiene filename')
+  const { readFile } = await import('fs/promises')
+  const { join } = await import('path')
+  return readFile(join(process.cwd(), 'media', media.filename))
 }
 
 export async function runPdfImport(importId: number | string) {
@@ -240,16 +151,19 @@ export async function runPdfImport(importId: number | string) {
     return
   }
 
-  const apiKey = process.env.OPENAI_API_KEY
-  if (!apiKey) {
+  // Inicializar extractor de visión (Gemini por defecto, fallback OpenAI)
+  let extractor: ReturnType<typeof getVisionExtractor>
+  try {
+    extractor = getVisionExtractor()
+    console.log(`[PdfImport] Vision extractor: ${extractor.id}`)
+  } catch (err) {
     await payload.update({
       collection: 'pdf-imports',
       id: importId,
-      data: { status: 'failed', errorMessage: 'Falta OPENAI_API_KEY en .env' } as any,
+      data: { status: 'failed', errorMessage: (err as Error).message } as any,
     })
     return
   }
-  const openai = new OpenAI({ apiKey })
 
   const fileId = typeof importDoc.originalFile === 'object'
     ? importDoc.originalFile.id
@@ -328,7 +242,7 @@ export async function runPdfImport(importId: number | string) {
           .jpeg({ quality: 82 })
           .toBuffer()
         const base64 = lowResForLlm.toString('base64')
-        const result = await callVisionLLM(openai, base64, page.text)
+        const result = await extractor.extract(base64, page.text)
 
         if (!brandDetected && result.brandDetected) brandDetected = result.brandDetected
         if (!collectionDetected && result.collectionDetected) {
