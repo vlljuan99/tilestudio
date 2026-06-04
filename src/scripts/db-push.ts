@@ -11,7 +11,7 @@
  * Uso (one-off dyno en Heroku):
  *   heroku run --app tilestudio-staging -- npm run db:push
  */
-process.env.NODE_ENV = 'development'
+;(process.env as Record<string, string>).NODE_ENV = 'development'
 
 async function main() {
   // Import dinámico DESPUÉS de pisar NODE_ENV para que el adapter de Postgres
