@@ -143,18 +143,13 @@ export default buildConfig({
     meta: {
       titleSuffix: '· Tilestudio Admin',
     },
-    components: {
-      // Provider que aplica la paleta del cliente al admin (lee SiteSettings y
-      // sobrescribe las CSS variables --theme-*).
-      providers: ['/components/payload/AdminThemeOverride'],
-      // Dashboard custom con accesos directos, stats y actividad reciente.
-      // Reemplaza el dashboard por defecto de Payload (que solo lista colecciones).
-      views: {
-        dashboard: {
-          Component: '/components/payload/AdminDashboard',
-        },
-      },
-    },
+    // Components custom (dashboard, provider de tema) desactivados temporalmente
+    // mientras diagnosticamos un problema de renderizado en Heroku. Reactivar
+    // cuando el flujo básico de admin funcione.
+    // components: {
+    //   providers: ['/components/payload/AdminThemeOverride'],
+    //   views: { dashboard: { Component: '/components/payload/AdminDashboard' } },
+    // },
   },
   collections: [
     // Catálogo
