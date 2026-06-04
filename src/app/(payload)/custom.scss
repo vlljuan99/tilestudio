@@ -1,1 +1,164 @@
-/* Custom Payload admin styles can be added here. */
+/* ============================================================================
+   Tema personalizado del admin de Tilestudio
+   - Modo claro cálido (off-white + charcoal)
+   - Acentos terracota / espresso a juego con la web pública
+   - Sin azules genéricos de SaaS
+   ============================================================================ */
+
+/* Forzar siempre el modo claro: el cliente del showroom no entiende dark mode */
+:root,
+html[data-theme='light'],
+html[data-theme='dark'] {
+  /* ── Fondo y elevaciones ──────────────────────────────────────────────── */
+  --theme-bg: #f5f1ea; /* fondo principal off-white cálido */
+  --theme-input-bg: #ffffff;
+
+  --theme-elevation-0: #ffffff;
+  --theme-elevation-50: #fbf8f2;
+  --theme-elevation-100: #f1ece2;
+  --theme-elevation-150: #e8e1d2;
+  --theme-elevation-200: #ddd4c0;
+  --theme-elevation-250: #d2c7b1;
+  --theme-elevation-300: #c5b9a0;
+  --theme-elevation-400: #a59a82;
+  --theme-elevation-500: #7d7464;
+  --theme-elevation-600: #5e564b;
+  --theme-elevation-650: #4a4339;
+  --theme-elevation-700: #3a352c;
+  --theme-elevation-750: #2c2820;
+  --theme-elevation-800: #1f1b16;
+  --theme-elevation-850: #181410;
+  --theme-elevation-900: #100c08;
+  --theme-elevation-950: #080604;
+  --theme-elevation-1000: #000000;
+
+  /* ── Texto ────────────────────────────────────────────────────────────── */
+  --theme-text: #1f1b17;
+
+  /* ── Acentos (espresso/terracota) ─────────────────────────────────────── */
+  --theme-success-50: #f6efe6;
+  --theme-success-100: #ead9c0;
+  --theme-success-250: #c9a070;
+  --theme-success-500: #7a4f23; /* espresso → botones primarios */
+  --theme-success-750: #4a2f15;
+  --theme-success-900: #2c1c0d;
+
+  /* Error: rojo cálido en vez de rojo SaaS frío */
+  --theme-error-50: #fbe9e3;
+  --theme-error-100: #f5c6b8;
+  --theme-error-250: #d97a59;
+  --theme-error-500: #b04621; /* terracota oscuro */
+  --theme-error-750: #7a2e14;
+  --theme-error-900: #4a1b0a;
+
+  /* Warning: amarillo mostaza */
+  --theme-warning-50: #fbf3df;
+  --theme-warning-100: #f4dfa0;
+  --theme-warning-250: #d9a93f;
+  --theme-warning-500: #b8861f;
+  --theme-warning-750: #7a5712;
+  --theme-warning-900: #4a3408;
+
+  /* ── Tipografía ──────────────────────────────────────────────────────── */
+  --font-body:
+    'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+  --font-serif:
+    'Fraunces', 'Times New Roman', Georgia, serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace;
+}
+
+/* ── Refinamientos generales ────────────────────────────────────────────── */
+body,
+.payload-default-template,
+.template-default {
+  background: var(--theme-bg);
+}
+
+/* Títulos de página y headers de sección con tipo serif (a juego con la web) */
+.template-default h1,
+.template-default h2,
+.template-default .doc-header h1,
+.dashboard__group h2,
+.collection-list h2,
+.list-header h1 {
+  font-family: var(--font-serif);
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+/* Botones primarios: espresso */
+.btn--style-primary {
+  background: var(--theme-success-500);
+  border-color: var(--theme-success-500);
+  color: #fff;
+}
+.btn--style-primary:hover {
+  background: var(--theme-success-750);
+  border-color: var(--theme-success-750);
+}
+
+/* "Crear nuevo" un poco más destacado */
+.list-header .btn--style-primary {
+  font-weight: 500;
+}
+
+/* Sidebar más cálido */
+.nav,
+.nav__wrap,
+.nav__scroll {
+  background: var(--theme-elevation-50);
+  border-right: 1px solid var(--theme-elevation-150);
+}
+
+.nav__label {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 600;
+  color: var(--theme-elevation-500);
+}
+
+.nav__link {
+  color: var(--theme-elevation-800);
+}
+.nav__link:hover,
+.nav__link--active {
+  background: var(--theme-elevation-100);
+  color: var(--theme-success-500);
+}
+
+/* Inputs y selects con tinte cálido en focus */
+input:focus,
+textarea:focus,
+select:focus {
+  border-color: var(--theme-success-500) !important;
+  box-shadow: 0 0 0 1px var(--theme-success-500) !important;
+}
+
+/* Pills/badges true/false con paleta cálida — se cambia el texto a "Sí/No"
+   en el campo "published"/"featured" cuando se renderiza en la tabla, pero
+   por si quedan algunos: */
+.pill {
+  border-radius: 999px;
+  font-weight: 500;
+}
+
+/* Tabla del listado con bordes suaves */
+.cell-wrap {
+  border-color: var(--theme-elevation-150);
+}
+
+table thead th {
+  background: var(--theme-elevation-50);
+  color: var(--theme-elevation-700);
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+/* Ajustar el logo placeholder de Payload (es genérico) para que sea menos
+   distractor — pintamos un círculo cálido */
+.graphic-logo,
+.graphic-icon {
+  filter: hue-rotate(20deg) saturate(0.6);
+}

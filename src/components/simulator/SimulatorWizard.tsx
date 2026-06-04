@@ -15,8 +15,13 @@ type Tile = {
   slug: string
   sku?: string | null
   mainImage?: { url?: string | null; alt?: string | null } | null
+  textureImage?: { url?: string | null; alt?: string | null } | null
   format?: { name?: string | null } | null
   finish?: { name?: string | null } | null
+}
+
+function thumbImage(tile: Tile) {
+  return tile.textureImage?.url ? tile.textureImage : tile.mainImage
 }
 
 type Props = {
@@ -197,7 +202,9 @@ function TilePicker({
 }) {
   return (
     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-      {catalog.map((tile) => (
+      {catalog.map((tile) => {
+        const thumb = thumbImage(tile)
+        return (
         <button
           key={tile.id}
           type="button"
@@ -205,10 +212,10 @@ function TilePicker({
           className="group text-left focus:outline-none focus:ring-2 focus:ring-ring rounded-lg"
         >
           <div className="aspect-square relative overflow-hidden rounded-lg bg-muted">
-            {tile.mainImage?.url && (
+            {thumb?.url && (
               <Image
-                src={tile.mainImage.url}
-                alt={tile.mainImage.alt || tile.name}
+                src={thumb.url}
+                alt={thumb.alt || tile.name}
                 fill
                 loading="eager"
                 sizes="(max-width: 640px) 50vw, 25vw"
@@ -219,7 +226,8 @@ function TilePicker({
           <p className="mt-2 text-sm font-medium leading-tight">{tile.name}</p>
           <p className="text-xs text-muted-foreground">{tile.format?.name}</p>
         </button>
-      ))}
+        )
+      })}
     </div>
   )
 }
@@ -466,13 +474,14 @@ function SelectedTileBar({
   onChange: () => void
   changeLabel?: string
 }) {
+  const thumb = thumbImage(tile)
   return (
     <div className="flex items-center gap-3 p-3 rounded-lg border border-border bg-muted/30">
       <div className="h-14 w-14 rounded relative overflow-hidden bg-muted shrink-0">
-        {tile.mainImage?.url && (
+        {thumb?.url && (
           <Image
-            src={tile.mainImage.url}
-            alt={tile.mainImage.alt || tile.name}
+            src={thumb.url}
+            alt={thumb.alt || tile.name}
             fill
             loading="eager"
             sizes="56px"

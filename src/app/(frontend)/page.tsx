@@ -115,16 +115,18 @@ export default async function HomePage() {
             </Link>
           </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            {tiles.map((tile: any) => (
+            {tiles.map((tile: any) => {
+              const cardImage = tile.textureImage?.url ? tile.textureImage : tile.mainImage
+              return (
               <Link
                 key={tile.id}
                 href={`/catalogo/${tile.slug}`}
                 className="group block aspect-square relative overflow-hidden rounded-lg bg-muted"
               >
-                {tile.mainImage?.url && (
+                {cardImage?.url && (
                   <Image
-                    src={tile.mainImage.url}
-                    alt={tile.mainImage.alt || tile.name}
+                    src={cardImage.url}
+                    alt={cardImage.alt || tile.name}
                     fill
                     loading="eager"
                     sizes="(max-width: 768px) 50vw, 25vw"
@@ -135,7 +137,8 @@ export default async function HomePage() {
                   <p className="text-white text-sm font-medium">{tile.name}</p>
                 </div>
               </Link>
-            ))}
+              )
+            })}
           </div>
         </section>
       )}

@@ -8,7 +8,10 @@ export const SimulatorSessions: CollectionConfig = {
     group: 'Simulador',
     defaultColumns: ['token', 'generationCount', 'expiresAt', 'lead', 'createdAt'],
     description:
-      'Sesiones temporales de usuarios anónimos del simulador. Se borran automáticamente al expirar.',
+      'Información técnica de las sesiones del simulador. No necesitas usar esto normalmente.',
+    // Ocultar del menú lateral — info técnica que el cliente no necesita ver.
+    // Sigue accesible por URL si alguna vez hace falta.
+    hidden: () => true,
   },
   access: {
     // Lectura pública controlada por token (filtrada en el endpoint, no aquí).

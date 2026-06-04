@@ -2,11 +2,12 @@ import type { CollectionConfig } from 'payload'
 
 export const Usages: CollectionConfig = {
   slug: 'usages',
-  labels: { singular: 'Uso', plural: 'Usos' },
+  labels: { singular: 'Tipo de uso', plural: 'Tipos de uso' },
   admin: {
     useAsTitle: 'name',
-    group: 'Taxonomías',
-    description: 'Tipo de uso recomendado (suelo interior, pared baño, exterior...).',
+    group: 'Etiquetas',
+    description:
+      'Dónde puede colocarse cada azulejo: suelo interior, pared de baño, exterior… Sirve para que los clientes filtren el catálogo.',
   },
   access: { read: () => true },
   fields: [

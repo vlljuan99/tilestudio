@@ -5,8 +5,10 @@ export const Formats: CollectionConfig = {
   labels: { singular: 'Formato', plural: 'Formatos' },
   admin: {
     useAsTitle: 'name',
-    group: 'Taxonomías',
+    group: 'Etiquetas',
     defaultColumns: ['name', 'widthCm', 'heightCm', 'slug'],
+    description:
+      'Las medidas del azulejo en centímetros (60x60, 30x90, 120x120…). Los clientes pueden filtrar el catálogo por tamaño.',
   },
   access: { read: () => true },
   fields: [

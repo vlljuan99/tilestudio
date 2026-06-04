@@ -15,22 +15,24 @@ type Doc = {
 }
 
 const STATUS_LABEL: Record<string, string> = {
-  queued: 'En cola',
-  processing: 'Procesando',
+  queued: 'En espera',
+  processing: 'Leyendo el PDF',
   review_ready: 'Listo para revisar',
-  importing: 'Importando',
-  completed: 'Completado',
-  failed: 'Fallido',
+  importing: 'Añadiendo al catálogo',
+  completed: 'Listo',
+  failed: 'Algo falló',
 }
 
 const STATUS_COLOR: Record<string, string> = {
-  queued: '#888',
-  processing: '#1e88e5',
-  review_ready: '#43a047',
-  importing: '#fb8c00',
-  completed: '#2e7d32',
-  failed: '#c62828',
+  queued: '#7d7464',
+  processing: '#7a4f23', // espresso
+  review_ready: '#5f7d3c', // verde oliva cálido
+  importing: '#b8861f', // mostaza
+  completed: '#5a7335', // verde tierra
+  failed: '#b04621', // terracota
 }
+
+const TERMINAL_STATUSES = new Set(['completed', 'failed'])
 
 export default function PdfImportProgress() {
   const { id } = useDocumentInfo()
@@ -48,14 +50,23 @@ export default function PdfImportProgress() {
     } catch {}
   }, [id])
 
-  // Polling cada 2s mientras esté procesando
+  // Polling cada 2s mientras esté procesando + refetch al volver a la pestaña.
+  // Cuando llega a un estado terminal (completed/failed) paramos el polling.
   useEffect(() => {
     fetchDoc()
     const t = setInterval(() => {
+      if (doc?.status && TERMINAL_STATUSES.has(doc.status)) return
       fetchDoc()
     }, 2000)
-    return () => clearInterval(t)
-  }, [fetchDoc])
+    const onFocus = () => fetchDoc()
+    window.addEventListener('focus', onFocus)
+    document.addEventListener('visibilitychange', onFocus)
+    return () => {
+      clearInterval(t)
+      window.removeEventListener('focus', onFocus)
+      document.removeEventListener('visibilitychange', onFocus)
+    }
+  }, [fetchDoc, doc?.status])
 
   async function start() {
     if (!id) return
@@ -67,8 +78,8 @@ export default function PdfImportProgress() {
         credentials: 'include',
       })
       const data = await res.json()
-      if (!res.ok) setMsg(data?.error || 'No se pudo iniciar.')
-      else setMsg('Extracción iniciada. Verás el progreso aquí abajo.')
+      if (!res.ok) setMsg(data?.error || 'No se pudo empezar.')
+      else setMsg('Hemos empezado a leer el PDF. Ve viendo el progreso aquí debajo.')
       await fetchDoc()
     } catch (err) {
       setMsg((err as Error).message)
@@ -87,16 +98,17 @@ export default function PdfImportProgress() {
   }
 
   const status = doc.status || 'queued'
-  const color = STATUS_COLOR[status] || '#888'
+  const color = STATUS_COLOR[status] || '#7d7464'
   const percent = doc.progressPercent ?? 0
   const isProcessing = status === 'processing'
   const canStart = status === 'queued' || status === 'failed'
   const canReview = status === 'review_ready' || (doc.candidatesCount || 0) > 0
+  const isCompleted = status === 'completed'
 
   return (
     <div style={style.box}>
       <div style={style.headerRow}>
-        <p style={style.title}>Estado del import</p>
+        <p style={style.title}>Estado de la importación</p>
         <span style={{ ...style.badge, backgroundColor: color }}>
           {STATUS_LABEL[status] || status}
         </span>
@@ -106,11 +118,11 @@ export default function PdfImportProgress() {
         <div style={{ ...style.bar, width: `${percent}%`, backgroundColor: color }} />
       </div>
       <p style={style.muted}>
-        {doc.processedPages || 0} / {doc.totalPages || '?'} páginas · {percent}% ·{' '}
-        {doc.candidatesCount || 0} candidatos
+        Página {doc.processedPages || 0} de {doc.totalPages || '?'} · {percent}% ·{' '}
+        {doc.candidatesCount || 0} azulejos encontrados
       </p>
 
-      {doc.currentStep && <p style={style.step}>→ {doc.currentStep}</p>}
+      {doc.currentStep && <p style={style.step}>{doc.currentStep}</p>}
       {doc.errorMessage && <p style={style.error}>{doc.errorMessage}</p>}
 
       <div style={style.actions}>
@@ -122,27 +134,36 @@ export default function PdfImportProgress() {
             style={{ ...style.btn, ...style.btnPrimary }}
           >
             {busy
-              ? 'Lanzando…'
+              ? 'Arrancando…'
               : status === 'failed'
-                ? 'Reintentar extracción'
-                : 'Iniciar extracción'}
+                ? 'Volver a intentarlo'
+                : 'Empezar a leer el PDF'}
           </button>
         )}
 
         {isProcessing && (
-          <button disabled type="button" style={{ ...style.btn, opacity: 0.6 }}>
-            Procesando…
+          <button disabled type="button" style={{ ...style.btn, opacity: 0.7 }}>
+            Leyendo el PDF…
           </button>
         )}
 
-        {canReview && (
+        {canReview && !isCompleted && (
           <a
             href={`/pdf-imports/${id}/review`}
             target="_blank"
             rel="noopener noreferrer"
             style={{ ...style.btn, ...style.btnSecondary, textDecoration: 'none' }}
           >
-            Revisar {doc.candidatesCount || 0} candidatos →
+            Revisar {doc.candidatesCount || 0} azulejos encontrados →
+          </a>
+        )}
+
+        {isCompleted && (
+          <a
+            href="/admin/collections/tiles"
+            style={{ ...style.btn, ...style.btnPrimary, textDecoration: 'none' }}
+          >
+            Ver azulejos en el catálogo →
           </a>
         )}
       </div>

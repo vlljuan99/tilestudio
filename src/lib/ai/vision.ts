@@ -135,54 +135,76 @@ export class OpenAIVisionExtractor implements VisionExtractor {
 
 // -- Gemini implementation ---------------------------------------------------
 
-import { GoogleGenerativeAI } from '@google/generative-ai'
+import { GoogleGenAI } from '@google/genai'
 
 export class GeminiVisionExtractor implements VisionExtractor {
   readonly id: string
-  private client: GoogleGenerativeAI
+  private client: GoogleGenAI
   private model: string
 
   constructor(apiKey: string, model = 'gemini-2.5-flash') {
-    this.client = new GoogleGenerativeAI(apiKey)
+    this.client = new GoogleGenAI({ apiKey })
     this.model = model
     this.id = `gemini:${model}`
   }
 
   async extract(imageBase64: string, pageText: string): Promise<ExtractionResult> {
-    const genModel = this.client.getGenerativeModel({
-      model: this.model,
-      // systemInstruction mantiene el prompt de sistema separado del turn de usuario
-      systemInstruction: VISION_SYSTEM_PROMPT,
-      generationConfig: {
-        responseMimeType: 'application/json',
-        // Desactivar thinking: no necesario para extracción estructurada
-        // y ahorra ~15-20 s por página (gemini-2.5-flash lo activa por defecto)
-        thinkingConfig: { thinkingBudget: 0 },
-      } as any,
-    })
-
     const userText = `Texto extraído de la página (úsalo como referencia para nombres y códigos exactos):\n\n${pageText.slice(0, 4000)}`
 
-    const result = await genModel.generateContent({
-      contents: [
-        {
-          role: 'user',
-          parts: [
-            { text: userText },
-            { inlineData: { mimeType: 'image/jpeg', data: imageBase64 } },
+    // Retry con backoff exponencial para errores transitorios (503 UNAVAILABLE,
+    // 429 RESOURCE_EXHAUSTED). Hasta 3 intentos.
+    let lastErr: unknown
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (attempt > 0) {
+        const wait = 1500 * Math.pow(2, attempt - 1) // 1.5s, 3s
+        await new Promise((r) => setTimeout(r, wait))
+      }
+      try {
+        const result = await this.client.models.generateContent({
+          model: this.model,
+          contents: [
+            {
+              role: 'user',
+              parts: [
+                { text: userText },
+                { inlineData: { mimeType: 'image/jpeg', data: imageBase64 } },
+              ],
+            },
           ],
-        },
-      ],
-    })
+          config: {
+            systemInstruction: VISION_SYSTEM_PROMPT,
+            responseMimeType: 'application/json',
+            // thinkingBudget: 0 detecta 1-2 productos por página, -1 (auto)
+            // detecta todas las variantes pero tarda 15-26s. 2048 es un balance:
+            // suficiente "razonamiento" para listar todas las variantes sin gastar
+            // 20s pensando innecesariamente. Override con GEMINI_THINKING_BUDGET.
+            thinkingConfig: {
+              thinkingBudget: process.env.GEMINI_THINKING_BUDGET
+                ? Number(process.env.GEMINI_THINKING_BUDGET)
+                : 2048,
+            },
+          },
+        })
 
-    const text = result.response.text()
-    try {
-      return JSON.parse(text) as ExtractionResult
-    } catch {
-      console.warn('[GeminiVisionExtractor] No se pudo parsear JSON:', text.slice(0, 200))
-      console.warn('[GeminiVisionExtractor] Respuesta raw:', text.slice(0, 500))
-      return { products: [] }
+        const text = result.text
+        if (!text) return { products: [] }
+        try {
+          return JSON.parse(text) as ExtractionResult
+        } catch {
+          console.warn('[GeminiVisionExtractor] No se pudo parsear JSON:', text.slice(0, 200))
+          return { products: [] }
+        }
+      } catch (err) {
+        lastErr = err
+        const msg = (err as Error).message || ''
+        const retriable = msg.includes('503') || msg.includes('429') || msg.includes('UNAVAILABLE')
+        if (!retriable) throw err
+        console.warn(
+          `[GeminiVisionExtractor] Retry ${attempt + 1}/3 tras error transitorio: ${msg.slice(0, 100)}`,
+        )
+      }
     }
+    throw lastErr
   }
 }
 

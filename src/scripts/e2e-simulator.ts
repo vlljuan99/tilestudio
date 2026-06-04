@@ -31,11 +31,16 @@ async function makeSyntheticRoom(): Promise<Buffer> {
 }
 
 async function getTileId(): Promise<number | string> {
-  const url = `${BASE}/api/tiles?where[slug][equals]=marfil-mate&limit=1`
-  const res = await fetch(url)
+  // Preferimos un tile concreto si existe; si no, el primero publicado
+  const tryUrl = `${BASE}/api/tiles?where[slug][equals]=alloy-azzurro&limit=1`
+  let res = await fetch(tryUrl)
+  let data = (await res.json()) as { docs: Array<{ id: number | string }> }
+  if (data.docs?.[0]?.id) return data.docs[0].id
+
+  res = await fetch(`${BASE}/api/tiles?where[published][equals]=true&limit=1`)
   if (!res.ok) throw new Error(`Payload API devolvió ${res.status} al buscar el tile`)
-  const data = (await res.json()) as { docs: Array<{ id: number | string }> }
-  if (!data.docs?.[0]?.id) throw new Error('No se encontró el tile marfil-mate. ¿Hiciste el seed?')
+  data = (await res.json()) as { docs: Array<{ id: number | string }> }
+  if (!data.docs?.[0]?.id) throw new Error('No hay ningún tile publicado. ¿Hiciste el seed?')
   return data.docs[0].id
 }
 

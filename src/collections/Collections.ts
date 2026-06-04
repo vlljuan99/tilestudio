@@ -1,4 +1,5 @@
 import type { CollectionConfig } from 'payload'
+import { autoSlugFrom } from '../lib/slug'
 
 export const TileCollections: CollectionConfig = {
   slug: 'collections',
@@ -11,7 +12,7 @@ export const TileCollections: CollectionConfig = {
   access: { read: () => true },
   fields: [
     { name: 'name', label: 'Nombre', type: 'text', required: true },
-    { name: 'slug', label: 'Slug', type: 'text', required: true, unique: true },
+    { name: 'slug', label: 'Dirección web', type: 'text', required: true, unique: true, ...autoSlugFrom('name') },
     {
       name: 'brand',
       label: 'Marca',

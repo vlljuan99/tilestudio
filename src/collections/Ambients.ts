@@ -1,4 +1,5 @@
 import type { CollectionConfig } from 'payload'
+import { autoSlugFrom } from '../lib/slug'
 
 export const Ambients: CollectionConfig = {
   slug: 'ambients',
@@ -17,7 +18,7 @@ export const Ambients: CollectionConfig = {
   },
   fields: [
     { name: 'title', label: 'Título', type: 'text', required: true },
-    { name: 'slug', label: 'Slug', type: 'text', required: true, unique: true },
+    { name: 'slug', label: 'Dirección web', type: 'text', required: true, unique: true, ...autoSlugFrom('title') },
     { name: 'description', label: 'Descripción', type: 'textarea' },
     {
       name: 'image',

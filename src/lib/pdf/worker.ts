@@ -19,8 +19,110 @@
 import { getPayload } from 'payload'
 import sharp from 'sharp'
 import config from '@payload-config'
-import { loadPdf, iteratePages, getTotalPages } from './extractor'
+import { loadPdf, iteratePages, getTotalPages, extractEmbeddedImages, type EmbeddedImage } from './extractor'
 import { getVisionExtractor, type ExtractionResult } from '../ai/vision'
+
+// =============================================================================
+// Matching de imágenes embebidas a candidatos
+// =============================================================================
+
+/**
+ * Asigna cada candidato a una imagen embebida distinta minimizando la distancia
+ * acumulada entre centros. Algoritmo greedy: ordena por distancia y empareja
+ * en orden, evitando reusos.
+ *
+ * Devuelve un Map(candidateIdx → EmbeddedImage). Los que no se pudieron
+ * matchear no aparecen en el Map (devolverán undefined).
+ */
+function matchEmbeddedToCandidates(
+  embedded: EmbeddedImage[],
+  candidateBboxes: Array<[number, number, number, number] | null | undefined>,
+): Map<number, EmbeddedImage> {
+  type Pair = { ci: number; ei: number; dist: number }
+  const pairs: Pair[] = []
+  for (let ci = 0; ci < candidateBboxes.length; ci++) {
+    const bb = candidateBboxes[ci]
+    if (!bb) continue
+    const cx = (bb[0] + bb[2]) / 2
+    const cy = (bb[1] + bb[3]) / 2
+    for (let ei = 0; ei < embedded.length; ei++) {
+      const img = embedded[ei]
+      const dx = cx - img.cx
+      const dy = cy - img.cy
+      pairs.push({ ci, ei, dist: Math.hypot(dx, dy) })
+    }
+  }
+  pairs.sort((a, b) => a.dist - b.dist)
+  const usedC = new Set<number>()
+  const usedE = new Set<number>()
+  const matches = new Map<number, EmbeddedImage>()
+  // 1ª pasada: emparejamos los pares más cercanos con threshold razonable.
+  for (const p of pairs) {
+    if (usedC.has(p.ci) || usedE.has(p.ei)) continue
+    if (p.dist > 0.5) continue
+    usedC.add(p.ci)
+    usedE.add(p.ei)
+    matches.set(p.ci, embedded[p.ei])
+  }
+  // 2ª pasada: los candidatos sueltos los asignamos a los swatches sueltos
+  // que queden, en orden de proximidad. Sin threshold — preferimos un swatch
+  // sub-óptimo a un crop pixelado del render.
+  for (const p of pairs) {
+    if (usedC.has(p.ci) || usedE.has(p.ei)) continue
+    usedC.add(p.ci)
+    usedE.add(p.ei)
+    matches.set(p.ci, embedded[p.ei])
+  }
+  return matches
+}
+
+/**
+ * Encuentra la imagen embebida que probablemente es el ambient: la más grande
+ * en el rango de área aceptable y con aspect ratio fotográfico (1:1 a 2:1).
+ *
+ * Filtra primero las imágenes ya usadas como swatches.
+ */
+function findAmbientImage(
+  embedded: EmbeddedImage[],
+  alreadyUsed: Set<EmbeddedImage>,
+  ambientBboxHint?: [number, number, number, number] | null,
+): EmbeddedImage | null {
+  const candidates = embedded.filter((img) => !alreadyUsed.has(img))
+  if (candidates.length === 0) return null
+
+  // Si tenemos hint del LLM, preferimos la más cercana al centro de ese bbox
+  if (ambientBboxHint) {
+    const cx = (ambientBboxHint[0] + ambientBboxHint[2]) / 2
+    const cy = (ambientBboxHint[1] + ambientBboxHint[3]) / 2
+    let best: EmbeddedImage | null = null
+    let bestScore = -Infinity
+    for (const img of candidates) {
+      const dist = Math.hypot(img.cx - cx, img.cy - cy)
+      // Score: penaliza distancia, premia área. Los ambientes son típicamente
+      // las imágenes más grandes del spread.
+      const area = img.width * img.height
+      const score = area / 1_000_000 - dist * 3
+      if (score > bestScore) {
+        bestScore = score
+        best = img
+      }
+    }
+    return best
+  }
+
+  // Sin hint: la más grande con aspect ratio fotográfico (0.5–2.5)
+  let best: EmbeddedImage | null = null
+  let bestArea = 0
+  for (const img of candidates) {
+    if (img.aspect < 0.5 || img.aspect > 2.5) continue
+    const area = img.width * img.height
+    if (area > bestArea) {
+      bestArea = area
+      best = img
+    }
+  }
+  return best
+}
 
 export type Candidate = {
   id: string
@@ -234,9 +336,32 @@ export async function runPdfImport(importId: number | string) {
         `Página ${page.pageNumber} del PDF`,
       )
 
-      // Llamada al LLM con versión reducida (controla coste de tokens de imagen).
-      // El render original a alta resolución se reserva para los crops finales.
+      // Pipeline híbrido:
+      //  1. Extraer las imágenes embebidas del PDF (calidad print, sin cropping).
+      //  2. Separarlas en "ambientes candidatos" (las grandes) y "swatches" (texturas).
+      //  3. LLM identifica variantes + bbox aproximada de cada una.
+      //  4. Matchear cada candidato a un SWATCH cercano en posición (no a un ambient).
+      //  5. El ambient es la imagen más grande (con preferencia por el bbox del LLM).
       try {
+        // 1. Imágenes embebidas
+        const allEmbedded = await extractEmbeddedImages(doc, page.pageNumber)
+
+        // 2. Separar ambient(s) de swatches: las imágenes con área notablemente
+        //    mayor que la mediana son fotos de ambiente; el resto son swatches.
+        let swatches: EmbeddedImage[] = allEmbedded
+        let ambientCandidates: EmbeddedImage[] = []
+        if (allEmbedded.length >= 2) {
+          const areas = allEmbedded.map((img) => img.width * img.height)
+          const sorted = [...areas].sort((a, b) => a - b)
+          const median = sorted[Math.floor(sorted.length / 2)]
+          // Una imagen es "ambient candidate" si su área es 2.5x mayor que la mediana
+          ambientCandidates = allEmbedded.filter(
+            (img) => img.width * img.height >= median * 2.5,
+          )
+          swatches = allEmbedded.filter((img) => !ambientCandidates.includes(img))
+        }
+
+        // 3. LLM
         const lowResForLlm = await sharp(page.renderJpeg)
           .resize(1280, 1280, { fit: 'inside', withoutEnlargement: true })
           .jpeg({ quality: 82 })
@@ -249,9 +374,28 @@ export async function runPdfImport(importId: number | string) {
           collectionDetected = result.collectionDetected
         }
 
-        // Recortar ambient (compartido para todos los candidatos de esta página)
+        const products = result.products || []
+        const candidateBboxes = products.map((p) => p.textureBbox)
+
+        // 4. Matching: solo entre swatches y candidatos (no ambients)
+        const candidateMatches = matchEmbeddedToCandidates(swatches, candidateBboxes)
+        const usedEmbedded = new Set<EmbeddedImage>()
+        for (const img of candidateMatches.values()) usedEmbedded.add(img)
+
+        // 5. Ambient: buscamos entre los ambientCandidates primero; si no hay,
+        //    caemos al pool global (puede que algún spread no separe bien).
         let sharedAmbient: { id: number | string; url: string } | undefined
-        if (result.ambientBbox) {
+        const ambientPool = ambientCandidates.length > 0 ? ambientCandidates : allEmbedded
+        const ambientImg = findAmbientImage(ambientPool, usedEmbedded, result.ambientBbox)
+        if (ambientImg) {
+          sharedAmbient = await uploadMedia(
+            payload,
+            ambientImg.jpeg,
+            `pdf-import-${importId}-p${page.pageNumber}-ambient.jpg`,
+            `Ambiente p.${page.pageNumber}`,
+          )
+        } else if (result.ambientBbox) {
+          // Fallback: si no encontramos embedded apto, recortamos del render
           const ambientCrop = await cropFromPage(page.renderJpeg, result.ambientBbox)
           if (ambientCrop) {
             sharedAmbient = await uploadMedia(
@@ -263,26 +407,35 @@ export async function runPdfImport(importId: number | string) {
           }
         }
 
+        // 5. Construir candidatos con la imagen embebida matcheada (o fallback)
         const newCandidates: Candidate[] = []
-        for (let idx = 0; idx < (result.products || []).length; idx++) {
-          const p = result.products[idx]
+        for (let idx = 0; idx < products.length; idx++) {
+          const p = products[idx]
+          const matchedImg = candidateMatches.get(idx)
+          const safeName = p.variantName
+            .toLowerCase()
+            .normalize('NFD')
+            .replace(/[̀-ͯ]/g, '')
+            .replace(/[^a-z0-9]+/g, '-')
+            .replace(/(^-|-$)/g, '')
 
-          // Recortar textura específica del candidato
           let texture: { id: number | string; url: string } | undefined
-          if (p.textureBbox) {
+          if (matchedImg) {
+            texture = await uploadMedia(
+              payload,
+              matchedImg.jpeg,
+              `pdf-import-${importId}-p${page.pageNumber}-${safeName}.jpg`,
+              `Textura ${p.variantName} (${matchedImg.width}×${matchedImg.height})`,
+            )
+          } else if (p.textureBbox) {
+            // Fallback al crop del render si el matching falló
             const tCrop = await cropFromPage(page.renderJpeg, p.textureBbox)
             if (tCrop) {
-              const safeName = p.variantName
-                .toLowerCase()
-                .normalize('NFD')
-                .replace(/[̀-ͯ]/g, '')
-                .replace(/[^a-z0-9]+/g, '-')
-                .replace(/(^-|-$)/g, '')
               texture = await uploadMedia(
                 payload,
                 tCrop,
                 `pdf-import-${importId}-p${page.pageNumber}-${safeName}.jpg`,
-                `Textura ${p.variantName}`,
+                `Textura ${p.variantName} (crop)`,
               )
             }
           }

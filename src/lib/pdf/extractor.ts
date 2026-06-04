@@ -160,3 +160,154 @@ export async function* iteratePages(
     yield await extractPage(doc, p)
   }
 }
+
+// =============================================================================
+// Imágenes embebidas
+// =============================================================================
+
+export type EmbeddedImage = {
+  /** Índice en el operatorList (puede repetirse si el mismo XObject se pinta varias veces) */
+  index: number
+  /** Bbox normalizada al viewport de la página, clamped a [0,1] */
+  bbox: { x1: number; y1: number; x2: number; y2: number }
+  /** Centro de la bbox */
+  cx: number
+  cy: number
+  /** Dimensiones reales del JPEG/raster embebido en el PDF */
+  width: number
+  height: number
+  /** Aspect ratio width/height */
+  aspect: number
+  /** Buffer JPEG de la imagen */
+  jpeg: Buffer
+}
+
+const PDFJS_OPS_PROMISE = import('pdfjs-dist/legacy/build/pdf.mjs').then((m) => m.OPS)
+
+/**
+ * Extrae todas las imágenes embebidas (XObjects) de una página, junto con su
+ * posición en la página.
+ *
+ * Útil para conseguir las texturas/ambientes a calidad original de imprenta
+ * sin rasterizar la página entera.
+ */
+export async function extractEmbeddedImages(
+  doc: any,
+  pageNumber: number,
+  options: {
+    /** Anchura mínima (px) para considerar una imagen relevante. Filtra logos/iconos. */
+    minWidth?: number
+    /** Altura mínima (px). */
+    minHeight?: number
+  } = {},
+): Promise<EmbeddedImage[]> {
+  const minWidth = options.minWidth ?? 200
+  const minHeight = options.minHeight ?? 150
+
+  const ops = await PDFJS_OPS_PROMISE
+  const page = await doc.getPage(pageNumber)
+  const viewport = page.getViewport({ scale: 1 })
+  const VW = viewport.width
+  const VH = viewport.height
+
+  const opList = await page.getOperatorList()
+
+  // CTM management
+  let ctm: number[] = [1, 0, 0, 1, 0, 0]
+  const stack: number[][] = []
+  const mul = (a: number[], b: number[]): number[] => [
+    a[0] * b[0] + a[2] * b[1],
+    a[1] * b[0] + a[3] * b[1],
+    a[0] * b[2] + a[2] * b[3],
+    a[1] * b[2] + a[3] * b[3],
+    a[0] * b[4] + a[2] * b[5] + a[4],
+    a[1] * b[4] + a[3] * b[5] + a[5],
+  ]
+
+  // Recolectamos refs (name + ctm + index) en una pasada
+  type Ref = { index: number; name: string; ctm: number[] }
+  const refs: Ref[] = []
+
+  for (let i = 0; i < opList.fnArray.length; i++) {
+    const fn = opList.fnArray[i]
+    const args = opList.argsArray[i]
+    if (fn === ops.save) {
+      stack.push([...ctm])
+    } else if (fn === ops.restore) {
+      ctm = stack.pop() || [1, 0, 0, 1, 0, 0]
+    } else if (fn === ops.transform) {
+      ctm = mul(ctm, args as number[])
+    } else if (fn === ops.paintImageXObject || fn === ops.paintImageMaskXObject) {
+      refs.push({ index: i, name: args[0], ctm: [...ctm] })
+    }
+  }
+
+  const out: EmbeddedImage[] = []
+
+  for (const ref of refs) {
+    let img: any = null
+    try {
+      img = await new Promise((resolve, reject) => {
+        try {
+          const r = page.objs.get(ref.name, (data: any) => resolve(data))
+          if (r) resolve(r)
+        } catch (e) {
+          reject(e)
+        }
+      })
+    } catch {
+      continue
+    }
+    if (!img?.data || !img.width || !img.height) continue
+    if (img.width < minWidth || img.height < minHeight) continue
+
+    // Calcular bbox del CTM
+    const [a, b, c, d, e, f] = ref.ctm
+    const wPt = Math.sqrt(a * a + b * b)
+    const hPt = Math.sqrt(c * c + d * d)
+    // pdfjs viewport origin top-left, PDF origin bottom-left → flip y
+    const x1raw = e
+    const y1raw = VH - f - hPt
+    const x2raw = x1raw + wPt
+    const y2raw = y1raw + hPt
+
+    const x1 = Math.max(0, Math.min(1, x1raw / VW))
+    const y1 = Math.max(0, Math.min(1, y1raw / VH))
+    const x2 = Math.max(0, Math.min(1, x2raw / VW))
+    const y2 = Math.max(0, Math.min(1, y2raw / VH))
+
+    // Skip si la bbox queda fuera del viewport efectivo
+    if (x2 - x1 < 0.02 || y2 - y1 < 0.02) continue
+
+    // Convertir raw a JPEG con sharp
+    let channels: 1 | 3 | 4 = 3
+    if (img.kind === 1) channels = 1
+    else if (img.kind === 2) channels = 3
+    else if (img.kind === 3) channels = 4
+
+    let jpeg: Buffer
+    try {
+      jpeg = await sharp(Buffer.from(img.data), {
+        raw: { width: img.width, height: img.height, channels },
+      })
+        .jpeg({ quality: 92 })
+        .toBuffer()
+    } catch {
+      continue
+    }
+
+    out.push({
+      index: ref.index,
+      bbox: { x1, y1, x2, y2 },
+      cx: (x1 + x2) / 2,
+      cy: (y1 + y2) / 2,
+      width: img.width,
+      height: img.height,
+      aspect: img.width / img.height,
+      jpeg,
+    })
+  }
+
+  page.cleanup()
+  return out
+}

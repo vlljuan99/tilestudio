@@ -3,11 +3,13 @@ import type { CollectionConfig } from 'payload'
 export const Media: CollectionConfig = {
   slug: 'media',
   labels: {
-    singular: 'Imagen',
-    plural: 'Imágenes',
+    singular: 'Archivo',
+    plural: 'Archivos',
   },
   admin: {
-    group: 'Sistema',
+    group: 'Configuración',
+    description:
+      'Todas las imágenes y PDFs que se han subido a la web (fotos de azulejos, ambientes, logos, catálogos en PDF). Normalmente no necesitas tocarlo desde aquí — las imágenes se suben al añadir un azulejo o un ambiente.',
   },
   access: {
     read: () => true,

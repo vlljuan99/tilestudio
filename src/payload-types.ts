@@ -148,7 +148,7 @@ export interface UserAuthOperations {
   };
 }
 /**
- * Catálogo de azulejos del showroom. Solo se muestran al público los que están publicados.
+ * Aquí están todos los azulejos que tienes en el showroom. Los que tienen "Publicado" activado son los que ven tus clientes en la web. Puedes añadir nuevos uno a uno o subir un catálogo PDF entero desde "Catálogos importados".
  *
  * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "tiles".
@@ -157,11 +157,11 @@ export interface Tile {
   id: number;
   name: string;
   /**
-   * Se usa en la URL: /catalogo/<slug>
+   * Es lo que aparece en la dirección web pública. Se rellena solo a partir del nombre — solo cámbialo si tienes un motivo.
    */
   slug: string;
   /**
-   * Código interno o de marca.
+   * El código con el que el fabricante identifica el azulejo (ej. SOL23 / SOL28).
    */
   sku?: string | null;
   description?: string | null;
@@ -213,6 +213,8 @@ export interface Tile {
   createdAt: string;
 }
 /**
+ * Todas las imágenes y PDFs que se han subido a la web (fotos de azulejos, ambientes, logos, catálogos en PDF). Normalmente no necesitas tocarlo desde aquí — las imágenes se suben al añadir un azulejo o un ambiente.
+ *
  * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "media".
  */
@@ -265,6 +267,9 @@ export interface Media {
 export interface Collection {
   id: number;
   name: string;
+  /**
+   * Es lo que aparece en la dirección web pública. Se rellena solo a partir del nombre — solo cámbialo si tienes un motivo.
+   */
   slug: string;
   brand?: (number | null) | Brand;
   description?: string | null;
@@ -280,6 +285,9 @@ export interface Collection {
 export interface Brand {
   id: number;
   name: string;
+  /**
+   * Es lo que aparece en la dirección web pública. Se rellena solo a partir del nombre — solo cámbialo si tienes un motivo.
+   */
   slug: string;
   description?: string | null;
   logo?: (number | null) | Media;
@@ -287,6 +295,8 @@ export interface Brand {
   createdAt: string;
 }
 /**
+ * Colores principales por los que tus clientes pueden filtrar el catálogo (blanco, beige, gris, terracota…).
+ *
  * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "colors".
  */
@@ -305,6 +315,8 @@ export interface Color {
   createdAt: string;
 }
 /**
+ * Cómo es la superficie del azulejo: mate, brillo, satinado, antideslizante… Los clientes pueden filtrar el catálogo por acabado.
+ *
  * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "finishes".
  */
@@ -317,6 +329,8 @@ export interface Finish {
   createdAt: string;
 }
 /**
+ * Las medidas del azulejo en centímetros (60x60, 30x90, 120x120…). Los clientes pueden filtrar el catálogo por tamaño.
+ *
  * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "formats".
  */
@@ -333,7 +347,7 @@ export interface Format {
   createdAt: string;
 }
 /**
- * Tipo de uso recomendado (suelo interior, pared baño, exterior...).
+ * Dónde puede colocarse cada azulejo: suelo interior, pared de baño, exterior… Sirve para que los clientes filtren el catálogo.
  *
  * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "usages".
@@ -346,7 +360,7 @@ export interface Usage {
   createdAt: string;
 }
 /**
- * Estancias para clasificar y filtrar el catálogo.
+ * Estancias de la casa (baño, cocina, salón, dormitorio, exterior). Cuando etiquetas un azulejo con su estancia, los clientes pueden filtrar el catálogo por habitación.
  *
  * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "rooms".
@@ -367,6 +381,9 @@ export interface Room {
 export interface Ambient {
   id: number;
   title: string;
+  /**
+   * Es lo que aparece en la dirección web pública. Se rellena solo a partir del nombre — solo cámbialo si tienes un motivo.
+   */
   slug: string;
   description?: string | null;
   image: number | Media;
@@ -387,7 +404,7 @@ export interface Ambient {
   createdAt: string;
 }
 /**
- * Contactos comerciales captados desde la web.
+ * Personas que han contactado contigo desde la web (a través del simulador, una ficha de azulejo o el formulario de contacto). Aquí ves su mensaje, qué azulejo les interesa y por qué canal prefieren que les respondas.
  *
  * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "leads".
@@ -421,7 +438,7 @@ export interface Lead {
   createdAt: string;
 }
 /**
- * Sesiones temporales de usuarios anónimos del simulador. Se borran automáticamente al expirar.
+ * Información técnica de las sesiones del simulador. No necesitas usar esto normalmente.
  *
  * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "simulator-sessions".
@@ -454,7 +471,7 @@ export interface SimulatorSession {
   createdAt: string;
 }
 /**
- * Cada simulación generada por IA. Vinculada a una sesión y a un azulejo.
+ * Cada vez que un visitante de tu web prueba un azulejo en su propia foto con la inteligencia artificial, queda guardado aquí: qué azulejo eligió, sobre qué superficie y el resultado.
  *
  * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "generations".
@@ -486,7 +503,7 @@ export interface Generation {
   createdAt: string;
 }
 /**
- * Sube un catálogo en PDF de un proveedor y conviértelo automáticamente en azulejos de tu catálogo.
+ * Sube aquí los catálogos PDF de tus proveedores (Pamesa, NewTiles, etc.). El sistema lee el PDF, identifica los azulejos con sus fotos, y los añade a tu catálogo. Luego puedes revisarlos antes de mostrarlos a tus clientes.
  *
  * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "pdf-imports".
@@ -549,6 +566,8 @@ export interface PdfImport {
   createdAt: string;
 }
 /**
+ * Las personas que pueden entrar a esta zona de administración. Crea aquí a tus comerciales o colaboradores para que puedan responder a los clientes interesados.
+ *
  * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "users".
  */
@@ -1056,6 +1075,46 @@ export interface SiteSetting {
   heroSubtitle?: string | null;
   heroImage?: (number | null) | Media;
   aboutShort?: string | null;
+  /**
+   * Botones, enlaces, acentos importantes.
+   */
+  colorPrimary?: string | null;
+  /**
+   * Para etiquetas, badges, detalles.
+   */
+  colorAccent?: string | null;
+  /**
+   * Color base de la web (claro).
+   */
+  colorBackground?: string | null;
+  /**
+   * Tarjetas y bloques (un pelín distinto del fondo).
+   */
+  colorSurface?: string | null;
+  /**
+   * Texto principal (oscuro).
+   */
+  colorText?: string | null;
+  fontSerif?:
+    | ('Fraunces' | 'Cormorant Garamond' | 'Playfair Display' | 'EB Garamond' | 'Lora' | 'DM Serif Display')
+    | null;
+  fontSans?: ('Inter' | 'Manrope' | 'DM Sans' | 'Plus Jakarta Sans' | 'Outfit' | 'Work Sans') | null;
+  /**
+   * Cuánto se redondean botones y tarjetas.
+   */
+  cornerRadius?: ('none' | 'medium' | 'large' | 'pill') | null;
+  /**
+   * Tamaño base. Afecta a todo el texto de la web.
+   */
+  fontSize?: ('small' | 'medium' | 'large') | null;
+  /**
+   * ¿Cuánto aire entre los elementos? Más aire = sensación más premium.
+   */
+  density?: ('compact' | 'normal' | 'airy') | null;
+  /**
+   * Cómo se ven los botones principales.
+   */
+  buttonStyle?: ('solid' | 'outline' | 'minimal') | null;
   companyLegalName?: string | null;
   companyCif?: string | null;
   privacyPolicyUrl?: string | null;
@@ -1080,6 +1139,17 @@ export interface SiteSettingsSelect<T extends boolean = true> {
   heroSubtitle?: T;
   heroImage?: T;
   aboutShort?: T;
+  colorPrimary?: T;
+  colorAccent?: T;
+  colorBackground?: T;
+  colorSurface?: T;
+  colorText?: T;
+  fontSerif?: T;
+  fontSans?: T;
+  cornerRadius?: T;
+  fontSize?: T;
+  density?: T;
+  buttonStyle?: T;
   companyLegalName?: T;
   companyCif?: T;
   privacyPolicyUrl?: T;

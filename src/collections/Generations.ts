@@ -2,12 +2,13 @@ import type { CollectionConfig } from 'payload'
 
 export const Generations: CollectionConfig = {
   slug: 'generations',
-  labels: { singular: 'Generación', plural: 'Generaciones' },
+  labels: { singular: 'Simulación', plural: 'Simulaciones' },
   admin: {
     useAsTitle: 'id',
     group: 'Simulador',
     defaultColumns: ['id', 'tile', 'status', 'surfaces', 'providerUsed', 'costCents', 'createdAt'],
-    description: 'Cada simulación generada por IA. Vinculada a una sesión y a un azulejo.',
+    description:
+      'Cada vez que un visitante de tu web prueba un azulejo en su propia foto con la inteligencia artificial, queda guardado aquí: qué azulejo eligió, sobre qué superficie y el resultado.',
   },
   access: {
     read: () => true,

@@ -3,12 +3,14 @@ import type { CollectionConfig } from 'payload'
 export const Users: CollectionConfig = {
   slug: 'users',
   labels: {
-    singular: 'Usuario',
-    plural: 'Usuarios',
+    singular: 'Persona con acceso',
+    plural: 'Personas con acceso',
   },
   admin: {
     useAsTitle: 'email',
-    group: 'Sistema',
+    group: 'Configuración',
+    description:
+      'Las personas que pueden entrar a esta zona de administración. Crea aquí a tus comerciales o colaboradores para que puedan responder a los clientes interesados.',
   },
   auth: true,
   fields: [

@@ -1,4 +1,5 @@
 import type { CollectionConfig } from 'payload'
+import { autoSlugFrom } from '../lib/slug'
 
 export const Tiles: CollectionConfig = {
   slug: 'tiles',
@@ -7,7 +8,8 @@ export const Tiles: CollectionConfig = {
     useAsTitle: 'name',
     group: 'Catálogo',
     defaultColumns: ['name', 'sku', 'collection', 'format', 'published', 'featured'],
-    description: 'Catálogo de azulejos del showroom. Solo se muestran al público los que están publicados.',
+    description:
+      'Aquí están todos los azulejos que tienes en el showroom. Los que tienen "Publicado" activado son los que ven tus clientes en la web. Puedes añadir nuevos uno a uno o subir un catálogo PDF entero desde "Catálogos importados".',
     listSearchableFields: ['name', 'sku', 'description'],
   },
   access: {
@@ -26,17 +28,19 @@ export const Tiles: CollectionConfig = {
             { name: 'name', label: 'Nombre', type: 'text', required: true },
             {
               name: 'slug',
-              label: 'Slug',
+              label: 'Dirección web',
               type: 'text',
               required: true,
               unique: true,
-              admin: { description: 'Se usa en la URL: /catalogo/<slug>' },
+              ...autoSlugFrom('name'),
             },
             {
               name: 'sku',
-              label: 'Referencia / SKU',
+              label: 'Código de referencia',
               type: 'text',
-              admin: { description: 'Código interno o de marca.' },
+              admin: {
+                description: 'El código con el que el fabricante identifica el azulejo (ej. SOL23 / SOL28).',
+              },
             },
             {
               name: 'description',

@@ -11,10 +11,10 @@ import type { CollectionConfig } from 'payload'
  */
 export const PdfImports: CollectionConfig = {
   slug: 'pdf-imports',
-  labels: { singular: 'Import PDF', plural: 'Imports PDF' },
+  labels: { singular: 'Catálogo importado', plural: 'Catálogos importados' },
   admin: {
     useAsTitle: 'displayName',
-    group: 'Importación',
+    group: 'Importar catálogos',
     defaultColumns: [
       'displayName',
       'status',
@@ -23,7 +23,7 @@ export const PdfImports: CollectionConfig = {
       'createdAt',
     ],
     description:
-      'Sube un catálogo en PDF de un proveedor y conviértelo automáticamente en azulejos de tu catálogo.',
+      'Sube aquí los catálogos PDF de tus proveedores (Pamesa, NewTiles, etc.). El sistema lee el PDF, identifica los azulejos con sus fotos, y los añade a tu catálogo. Luego puedes revisarlos antes de mostrarlos a tus clientes.',
   },
   access: {
     read: ({ req }) => Boolean(req.user),

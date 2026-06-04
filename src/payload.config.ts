@@ -3,6 +3,7 @@ import { fileURLToPath } from 'url'
 import { buildConfig } from 'payload'
 import { sqliteAdapter } from '@payloadcms/db-sqlite'
 import { lexicalEditor } from '@payloadcms/richtext-lexical'
+import { es } from '@payloadcms/translations/languages/es'
 import sharp from 'sharp'
 
 import { Users } from './collections/Users'
@@ -33,6 +34,18 @@ export default buildConfig({
     },
     meta: {
       titleSuffix: '· Tilestudio Admin',
+    },
+    components: {
+      // Provider que aplica la paleta del cliente al admin (lee SiteSettings y
+      // sobrescribe las CSS variables --theme-*).
+      providers: ['/components/payload/AdminThemeOverride'],
+      // Dashboard custom con accesos directos, stats y actividad reciente.
+      // Reemplaza el dashboard por defecto de Payload (que solo lista colecciones).
+      views: {
+        dashboard: {
+          Component: '/components/payload/AdminDashboard',
+        },
+      },
     },
   },
   collections: [
@@ -70,4 +83,10 @@ export default buildConfig({
     },
   }),
   sharp,
+  // Toda la UI de Payload en español: botones, formularios, mensajes, errores,
+  // tabla de listado, paginación, búsqueda, etc.
+  i18n: {
+    fallbackLanguage: 'es',
+    supportedLanguages: { es },
+  },
 })

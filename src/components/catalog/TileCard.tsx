@@ -11,19 +11,24 @@ type TileCardProps = {
     orientativePrice?: number | null
     priceUnit?: string | null
     mainImage?: { url?: string | null; alt?: string | null } | null
+    textureImage?: { url?: string | null; alt?: string | null } | null
     format?: { name?: string | null } | null
     finish?: { name?: string | null } | null
   }
 }
 
 export function TileCard({ tile }: TileCardProps) {
+  // En el catálogo mostramos la textura del azulejo (swatch).
+  // Si no hay textura separada, caemos a la imagen principal.
+  const cardImage = tile.textureImage?.url ? tile.textureImage : tile.mainImage
+
   return (
     <Link href={`/catalogo/${tile.slug}`} className="group block">
       <div className="aspect-square relative overflow-hidden rounded-lg bg-muted">
-        {tile.mainImage?.url ? (
+        {cardImage?.url ? (
           <Image
-            src={tile.mainImage.url}
-            alt={tile.mainImage.alt || tile.name}
+            src={cardImage.url}
+            alt={cardImage.alt || tile.name}
             fill
             loading="eager"
             sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"

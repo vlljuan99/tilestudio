@@ -5,8 +5,10 @@ export const Finishes: CollectionConfig = {
   labels: { singular: 'Acabado', plural: 'Acabados' },
   admin: {
     useAsTitle: 'name',
-    group: 'Taxonomías',
+    group: 'Etiquetas',
     defaultColumns: ['name', 'slug'],
+    description:
+      'Cómo es la superficie del azulejo: mate, brillo, satinado, antideslizante… Los clientes pueden filtrar el catálogo por acabado.',
   },
   access: { read: () => true },
   fields: [

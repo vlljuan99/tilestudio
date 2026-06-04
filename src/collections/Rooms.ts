@@ -5,8 +5,9 @@ export const Rooms: CollectionConfig = {
   labels: { singular: 'Estancia', plural: 'Estancias' },
   admin: {
     useAsTitle: 'name',
-    group: 'Taxonomías',
-    description: 'Estancias para clasificar y filtrar el catálogo.',
+    group: 'Etiquetas',
+    description:
+      'Estancias de la casa (baño, cocina, salón, dormitorio, exterior). Cuando etiquetas un azulejo con su estancia, los clientes pueden filtrar el catálogo por habitación.',
   },
   access: { read: () => true },
   fields: [

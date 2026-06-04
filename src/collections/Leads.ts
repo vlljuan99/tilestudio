@@ -2,12 +2,13 @@ import type { CollectionConfig } from 'payload'
 
 export const Leads: CollectionConfig = {
   slug: 'leads',
-  labels: { singular: 'Lead', plural: 'Leads' },
+  labels: { singular: 'Cliente interesado', plural: 'Clientes interesados' },
   admin: {
     useAsTitle: 'displayName',
-    group: 'Comercial',
+    group: 'Clientes',
     defaultColumns: ['displayName', 'preferredChannel', 'tileOfInterest', 'status', 'createdAt'],
-    description: 'Contactos comerciales captados desde la web.',
+    description:
+      'Personas que han contactado contigo desde la web (a través del simulador, una ficha de azulejo o el formulario de contacto). Aquí ves su mensaje, qué azulejo les interesa y por qué canal prefieren que les respondas.',
   },
   access: {
     read: ({ req }) => Boolean(req.user),

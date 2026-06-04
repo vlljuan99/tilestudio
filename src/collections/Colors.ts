@@ -5,8 +5,10 @@ export const Colors: CollectionConfig = {
   labels: { singular: 'Color', plural: 'Colores' },
   admin: {
     useAsTitle: 'name',
-    group: 'Taxonomías',
+    group: 'Etiquetas',
     defaultColumns: ['name', 'hex', 'slug'],
+    description:
+      'Colores principales por los que tus clientes pueden filtrar el catálogo (blanco, beige, gris, terracota…).',
   },
   access: { read: () => true },
   fields: [
