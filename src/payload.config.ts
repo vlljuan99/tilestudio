@@ -47,6 +47,10 @@ function pickDatabaseAdapter() {
           ? false
           : { rejectUnauthorized: false },
       },
+      // En staging sincronizamos el schema en cada arranque (sin migraciones
+      // manuales). Para producción real sería mejor generar migraciones y
+      // ejecutarlas con `payload migrate`, pero aquí queremos cero fricción.
+      push: true,
     })
   }
   return sqliteAdapter({ client: { url: uri } })
