@@ -12,7 +12,8 @@
     "generate:types": "cross-env NODE_OPTIONS=--no-deprecation payload generate:types",
     "generate:importmap": "cross-env NODE_OPTIONS=--no-deprecation payload generate:importmap",
     "seed": "cross-env NODE_OPTIONS=--no-deprecation tsx --env-file=.env src/scripts/seed.ts",
-    "db:push": "cross-env NODE_OPTIONS=--no-deprecation tsx src/scripts/db-push.ts"
+    "db:push": "cross-env NODE_OPTIONS=--no-deprecation tsx src/scripts/db-push.ts",
+    "db:check": "cross-env NODE_OPTIONS=--no-deprecation tsx src/scripts/db-check.ts"
   },
   "dependencies": {
     "@google/genai": "^2.7.0",
