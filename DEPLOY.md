@@ -7,11 +7,11 @@ Cloudflare R2 para los archivos.
 
 - **App** → Heroku Container Runtime (Docker)
 - **DB** → Heroku Postgres `essential-0` (~5 $/mes)
-- **Media** → Cloudflare R2 (10 GB **gratis**)
+- **Media** → Azure Blob Storage (la cuenta de almacenamiento que ya tienes)
 - **IA** → tus keys de OpenAI/Gemini
 
-Coste estimado: **~5–7 $/mes** (solo el Postgres + el dyno; R2 gratis hasta
-10 GB).
+Coste estimado: **~5–10 $/mes** (Postgres + dyno + lo que ya pagues por Azure
+storage, que para esto son céntimos al mes).
 
 ---
 
@@ -46,43 +46,55 @@ heroku addons:create heroku-postgresql:essential-0 --app tilestudio-staging
 
 Esto inyecta automáticamente `DATABASE_URL` (postgres://…) como config var.
 
-## 4. Crear bucket en Cloudflare R2
+## 4. Crear contenedor en Azure Blob Storage
 
-1. Entra a [dash.cloudflare.com/r2](https://dash.cloudflare.com/?to=/:account/r2)
-2. **R2 → Create bucket** → nombre `tilestudio-media` (o el que quieras)
-3. En el bucket, pestaña **Settings → Public Access**:
-   - Activa "Custom Domains" si quieres tu propio dominio, **o**
-   - Activa "R2.dev subdomain" para obtener una URL `https://pub-xxxxx.r2.dev`
-4. **R2 → Manage R2 API Tokens → Create API Token**:
-   - Permissions: **Object Read & Write**
-   - Bucket: solo `tilestudio-media` (más seguro)
-   - Crea y **guarda** Access Key ID + Secret Access Key (no se vuelven a mostrar)
-5. Apunta también el **Account ID** que sale arriba a la derecha en R2 — lo
-   necesitas para el endpoint.
+Usa tu cuenta de almacenamiento de Azure (la que ya tienes):
+
+1. [Portal Azure](https://portal.azure.com) → tu **Storage Account**.
+2. Menú lateral **Containers** → **+ Container**:
+   - Nombre: `tilestudio-media` (o el que quieras)
+   - Public access level: **Blob (anonymous read access for blobs only)**
+     → Esto deja servir las imágenes directamente por URL pública. Si tu cuenta
+       tiene bloqueado el acceso público anónimo, mira la nota al final de
+       esta sección.
+   - Create.
+3. Menú lateral **Access keys** (en la sección "Security + networking"):
+   - Pulsa **Show** en `key1` → copia la **Connection string** completa (empieza
+     por `DefaultEndpointsProtocol=https;AccountName=...;AccountKey=...`).
+4. Apunta también la URL base de tu cuenta de blob, que es:
+   `https://<nombre-de-tu-storage-account>.blob.core.windows.net`
+
+> **Si tu cuenta no permite acceso público anónimo** (algunas políticas
+> empresariales lo prohíben), tienes dos opciones:
+> - Cambiar la cuenta para permitirlo: **Configuration → Allow Blob anonymous
+>   access → Enabled**, luego activa el "Blob" access en el contenedor.
+> - O usar una cuenta nueva solo para Tilestudio donde puedas hacerlo.
 
 ## 5. Configurar variables de entorno
 
 ```powershell
+$secret = node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+
 heroku config:set `
-  PAYLOAD_SECRET="$(node -e "console.log(require('crypto').randomBytes(32).toString('base64'))")" `
-  NEXT_PUBLIC_SERVER_URL="https://tilestudio-staging.herokuapp.com" `
+  PAYLOAD_SECRET="$secret" `
+  NEXT_PUBLIC_SERVER_URL="https://tilestudio-staging-02f9b77ad1e5.herokuapp.com" `
   OPENAI_API_KEY="sk-proj-..." `
   GOOGLE_API_KEY="AQ..." `
   AI_PROVIDER="gemini" `
   AI_VISION_PROVIDER="openai" `
-  S3_BUCKET="tilestudio-media" `
-  S3_ENDPOINT="https://<TU_ACCOUNT_ID>.r2.cloudflarestorage.com" `
-  S3_ACCESS_KEY_ID="<R2_ACCESS_KEY>" `
-  S3_SECRET_ACCESS_KEY="<R2_SECRET>" `
-  S3_PUBLIC_URL="https://pub-xxxxx.r2.dev" `
-  S3_REGION="auto" `
+  AZURE_STORAGE_CONNECTION_STRING="DefaultEndpointsProtocol=https;AccountName=...;AccountKey=...;EndpointSuffix=core.windows.net" `
+  AZURE_STORAGE_CONTAINER_NAME="tilestudio-media" `
+  AZURE_STORAGE_ACCOUNT_BASEURL="https://<tu-storage-account>.blob.core.windows.net" `
   --app tilestudio-staging
 ```
 
 Sustituye:
-- `<TU_ACCOUNT_ID>` por el Account ID de Cloudflare
-- `<R2_ACCESS_KEY>` y `<R2_SECRET>` por los del token que creaste
-- `S3_PUBLIC_URL` por el subdominio R2.dev (o tu dominio si configuraste uno)
+- `NEXT_PUBLIC_SERVER_URL` por la URL real de tu app de Heroku (Heroku te la
+  dio al crearla).
+- `AZURE_STORAGE_CONNECTION_STRING` por la connection string completa que
+  copiaste en el paso 4 (entre comillas dobles, todo en una línea).
+- `AZURE_STORAGE_ACCOUNT_BASEURL` por la URL de tu storage account.
+- Las keys de OpenAI y Google por las tuyas.
 
 > **DATABASE_URL** la inyecta Heroku Postgres automáticamente, no la pongas tú.
 
@@ -147,7 +159,7 @@ acceso al panel.
 - Mira `heroku logs --tail`. Casi siempre es `DATABASE_URL` no llegó (¿provisionaste el add-on?) o conexión SSL mal.
 
 **Las imágenes se ven rotas o devuelven 403:**
-- Tu R2 bucket no tiene acceso público activado. Revisa **R2 → bucket → Settings → Public Access**. Activa el subdominio R2.dev y vuelve a poner `S3_PUBLIC_URL` con esa URL.
+- El contenedor de Azure no tiene acceso anónimo en modo "Blob". En Portal Azure → tu storage → **Containers** → tu contenedor → **Change access level** → Blob. Si la cuenta tiene `Allow Blob anonymous access` desactivado a nivel cuenta, también hay que activarlo en **Configuration**.
 
 **Build falla con `Could not load the "sharp" module`:**
 - Sharp 0.32 está pinned para Payload. Si Heroku te dice que el binario falta, asegúrate de que en el Dockerfile usas `node:20-bookworm-slim` (no Alpine).

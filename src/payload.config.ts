@@ -6,6 +6,7 @@ import { postgresAdapter } from '@payloadcms/db-postgres'
 import { lexicalEditor } from '@payloadcms/richtext-lexical'
 import { es } from '@payloadcms/translations/languages/es'
 import { s3Storage } from '@payloadcms/storage-s3'
+import { azureStorage } from '@payloadcms/storage-azure'
 import sharp from 'sharp'
 
 import { Users } from './collections/Users'
@@ -52,50 +53,81 @@ function pickDatabaseAdapter(): DatabaseAdapterResult {
 }
 
 /**
- * Plugin de storage S3-compatible (Cloudflare R2, AWS S3, MinIO…).
- * Solo se activa si están definidas las env vars necesarias. En dev local sin
- * estas vars, los archivos se guardan en `/media` como hasta ahora.
+ * Plugins de almacenamiento de Media.
  *
- * Para Cloudflare R2 necesitas:
- *   - S3_BUCKET           (nombre del bucket)
- *   - S3_ENDPOINT         (https://<account-id>.r2.cloudflarestorage.com)
- *   - S3_ACCESS_KEY_ID    (Access Key del token)
+ * Detección automática en este orden:
+ *   1. Azure Blob Storage   — si AZURE_STORAGE_CONNECTION_STRING está definida
+ *   2. S3-compatible (R2)   — si S3_BUCKET + S3_ENDPOINT + credenciales
+ *   3. Filesystem local     — sin nada de lo anterior (dev local)
+ *
+ * Vars Azure:
+ *   - AZURE_STORAGE_CONNECTION_STRING
+ *   - AZURE_STORAGE_CONTAINER_NAME    (ej. "tilestudio-media")
+ *   - AZURE_STORAGE_ACCOUNT_BASEURL   (https://<account>.blob.core.windows.net)
+ *
+ * Vars S3 (Cloudflare R2 / AWS S3 / MinIO):
+ *   - S3_BUCKET
+ *   - S3_ENDPOINT
+ *   - S3_ACCESS_KEY_ID
  *   - S3_SECRET_ACCESS_KEY
- *   - S3_PUBLIC_URL       (URL pública del bucket: el dominio público de R2)
- *   - S3_REGION           (siempre "auto" para R2)
+ *   - S3_PUBLIC_URL    (opcional, URL pública para servir archivos directos)
+ *   - S3_REGION        ("auto" para R2)
  */
 function pickStoragePlugins() {
-  const bucket = process.env.S3_BUCKET
-  if (!bucket) return []
-  const endpoint = process.env.S3_ENDPOINT
-  const accessKeyId = process.env.S3_ACCESS_KEY_ID
-  const secretAccessKey = process.env.S3_SECRET_ACCESS_KEY
-  const publicUrl = process.env.S3_PUBLIC_URL
-  if (!endpoint || !accessKeyId || !secretAccessKey) return []
+  // --- Azure Blob Storage ---
+  const azureConn = process.env.AZURE_STORAGE_CONNECTION_STRING
+  if (azureConn) {
+    const containerName = process.env.AZURE_STORAGE_CONTAINER_NAME || 'tilestudio-media'
+    const baseURL = process.env.AZURE_STORAGE_ACCOUNT_BASEURL
+    if (baseURL) {
+      return [
+        azureStorage({
+          collections: { media: true },
+          allowContainerCreate: true,
+          baseURL,
+          connectionString: azureConn,
+          containerName,
+        }),
+      ]
+    }
+    console.warn(
+      '[storage] AZURE_STORAGE_CONNECTION_STRING definida pero falta AZURE_STORAGE_ACCOUNT_BASEURL. Se ignora Azure.',
+    )
+  }
 
-  return [
-    s3Storage({
-      bucket,
-      collections: {
-        media: {
-          // Las URLs de archivo apuntan al CDN público de R2. Si no tenemos
-          // S3_PUBLIC_URL, Payload genera URLs firmadas (sirven pero pesan más).
-          prefix: 'media',
-          generateFileURL: publicUrl
-            ? ({ filename, prefix }) =>
-                `${publicUrl.replace(/\/$/, '')}/${prefix ? prefix + '/' : ''}${filename}`
-            : undefined,
-        },
-      },
-      config: {
-        endpoint,
-        region: process.env.S3_REGION || 'auto',
-        credentials: { accessKeyId, secretAccessKey },
-        // R2 requiere path-style addressing
-        forcePathStyle: true,
-      },
-    }),
-  ]
+  // --- S3-compatible ---
+  const bucket = process.env.S3_BUCKET
+  if (bucket) {
+    const endpoint = process.env.S3_ENDPOINT
+    const accessKeyId = process.env.S3_ACCESS_KEY_ID
+    const secretAccessKey = process.env.S3_SECRET_ACCESS_KEY
+    const publicUrl = process.env.S3_PUBLIC_URL
+    if (endpoint && accessKeyId && secretAccessKey) {
+      return [
+        s3Storage({
+          bucket,
+          collections: {
+            media: {
+              prefix: 'media',
+              generateFileURL: publicUrl
+                ? ({ filename, prefix }) =>
+                    `${publicUrl.replace(/\/$/, '')}/${prefix ? prefix + '/' : ''}${filename}`
+                : undefined,
+            },
+          },
+          config: {
+            endpoint,
+            region: process.env.S3_REGION || 'auto',
+            credentials: { accessKeyId, secretAccessKey },
+            forcePathStyle: true,
+          },
+        }),
+      ]
+    }
+  }
+
+  // --- Filesystem (dev) ---
+  return []
 }
 
 export default buildConfig({
