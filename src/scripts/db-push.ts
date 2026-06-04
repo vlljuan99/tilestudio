@@ -23,11 +23,10 @@ async function main() {
   const payload = await getPayload({ config })
   console.log('[db-push] Schema sincronizado.')
 
-  // Cerramos conexiones limpiamente.
-  // @ts-expect-error — destroy existe en el adapter de drizzle pero no está tipado
-  if (typeof payload.db.destroy === 'function') {
-    // @ts-expect-error — igual
-    await payload.db.destroy()
+  // Cerramos conexiones limpiamente (destroy puede existir según adapter).
+  const db = payload.db as unknown as { destroy?: () => Promise<void> }
+  if (typeof db.destroy === 'function') {
+    await db.destroy()
   }
   process.exit(0)
 }
