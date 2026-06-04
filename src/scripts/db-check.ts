@@ -1,5 +1,5 @@
 /**
- * Inspección rápida de la BD: cuántas filas hay en las tablas críticas.
+ * Inspección rápida de la BD. Lista todas las tablas y filas en cada una.
  * Uso: heroku run:detached --app tilestudio-staging "npm run db:check"
  */
 import { Client } from 'pg'
@@ -16,23 +16,35 @@ async function main() {
   })
   await client.connect()
 
-  for (const table of ['users', 'tiles', 'media', 'leads', 'globals_site_settings']) {
+  // Listar todas las tablas del schema public
+  const tablesQ = await client.query(`
+    SELECT tablename FROM pg_tables
+    WHERE schemaname = 'public'
+    ORDER BY tablename
+  `)
+  console.log(`[db-check] ${tablesQ.rows.length} tablas en schema 'public':`)
+  for (const row of tablesQ.rows) {
+    const tname = row.tablename as string
     try {
-      const r = await client.query(`SELECT COUNT(*)::int AS n FROM "${table}"`)
-      console.log(`[db-check] ${table}: ${r.rows[0].n}`)
+      const c = await client.query(`SELECT COUNT(*)::int AS n FROM "${tname}"`)
+      console.log(`  - ${tname}: ${c.rows[0].n} filas`)
     } catch (err) {
-      console.log(`[db-check] ${table}: ERROR — ${(err as Error).message}`)
+      console.log(`  - ${tname}: ERROR (${(err as Error).message})`)
     }
   }
 
-  // Si hay users, lista emails (para limpiar si hace falta)
+  // Si hay tabla users, dump emails
   try {
-    const r = await client.query(`SELECT id, email FROM "users" LIMIT 10`)
+    const r = await client.query(`SELECT id, email FROM users LIMIT 5`)
     if (r.rows.length) {
-      console.log('[db-check] usuarios existentes:')
-      r.rows.forEach((row) => console.log(`  - id=${row.id} email=${row.email}`))
+      console.log('[db-check] users existentes:')
+      r.rows.forEach((row) => console.log(`  - ${row.id}: ${row.email}`))
+    } else {
+      console.log('[db-check] users: tabla vacía (0 docs)')
     }
-  } catch {}
+  } catch (err) {
+    console.log('[db-check] users: tabla no existe o sin permisos')
+  }
 
   await client.end()
   process.exit(0)
