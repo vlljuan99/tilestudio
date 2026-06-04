@@ -7,6 +7,13 @@ import { SiteHeader } from '@/components/site/Header'
 import { SiteFooter } from '@/components/site/Footer'
 import { WhatsAppFab } from '@/components/site/WhatsAppFab'
 
+// Toda la web pública depende de SiteSettings (paleta, fuentes, branding) de la
+// BD, así que no tiene sentido prerenderizar en build-time (la BD aún está
+// vacía). Forzamos server-render dinámico en todas las páginas del grupo
+// (frontend), incluida la home.
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
 export const metadata: Metadata = {
   title: {
     default: 'Tilestudio — Showroom de azulejos con simulación IA',
