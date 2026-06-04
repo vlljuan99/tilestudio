@@ -1,0 +1,14 @@
+# Heroku container deploy manifest
+# Documentación: https://devcenter.heroku.com/articles/build-docker-images-heroku-yml
+
+setup:
+  addons:
+    - plan: heroku-postgresql:essential-0
+      as: DATABASE
+
+build:
+  docker:
+    web: Dockerfile
+
+run:
+  web: npm run start

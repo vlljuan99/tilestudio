@@ -1,0 +1,58 @@
+# Lo que NO va al contexto de build (más rápido y más pequeño)
+
+# Dependencias y outputs locales
+node_modules
+.next
+out
+build
+dist
+
+# Caches
+.npm
+.cache
+.eslintcache
+*.tsbuildinfo
+
+# Local data y archivos del usuario
+tilestudio.db
+tilestudio.db-journal
+media/
+tmp/
+uploads/
+
+# Entornos y secretos (¡importante!)
+.env
+.env.*
+!.env.example
+
+# Git y editores
+.git
+.gitignore
+.gitattributes
+.vscode
+.idea
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Tests y scripts de dev
+test-results
+playwright-report
+**/*.test.ts
+**/*.test.tsx
+
+# Docs y deploy meta
+Dockerfile
+.dockerignore
+fly.toml
+DEPLOY.md
+README.md
+
+# Claude / configuración local
+.claude
+.cursor
