@@ -1,6 +1,6 @@
 import path from 'path'
 import { fileURLToPath } from 'url'
-import { buildConfig, type DatabaseAdapterResult } from 'payload'
+import { buildConfig } from 'payload'
 import { sqliteAdapter } from '@payloadcms/db-sqlite'
 import { postgresAdapter } from '@payloadcms/db-postgres'
 import { lexicalEditor } from '@payloadcms/richtext-lexical'
@@ -35,7 +35,7 @@ const dirname = path.dirname(filename)
  *  - o `DATABASE_URI` (otros hosts y dev local)
  *  - postgres:// → Postgres ; cualquier otra cosa → SQLite local
  */
-function pickDatabaseAdapter(): DatabaseAdapterResult {
+function pickDatabaseAdapter() {
   const uri = process.env.DATABASE_URL || process.env.DATABASE_URI || 'file:./tilestudio.db'
   if (uri.startsWith('postgres://') || uri.startsWith('postgresql://')) {
     return postgresAdapter({
@@ -47,9 +47,9 @@ function pickDatabaseAdapter(): DatabaseAdapterResult {
           ? false
           : { rejectUnauthorized: false },
       },
-    }) as DatabaseAdapterResult
+    })
   }
-  return sqliteAdapter({ client: { url: uri } }) as DatabaseAdapterResult
+  return sqliteAdapter({ client: { url: uri } })
 }
 
 /**
