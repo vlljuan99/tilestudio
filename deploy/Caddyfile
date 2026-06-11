@@ -1,0 +1,10 @@
+# Caddy — reverse proxy de Tilestudio.
+# Cada cliente tiene su propio archivo en sites/<slug>.caddy (lo genera
+# add-client.sh). Con dominio propio, Caddy emite el certificado TLS solo.
+
+{
+	# Descomentar cuando haya dominios con TLS, para avisos de Let's Encrypt:
+	# email tu@correo.com
+}
+
+import sites/*.caddy

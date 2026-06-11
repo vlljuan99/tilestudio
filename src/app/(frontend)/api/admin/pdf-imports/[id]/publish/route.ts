@@ -56,7 +56,10 @@ async function findOrCreateByName(
 }
 
 async function uploadFromUrl(payload: any, url: string, name: string, alt: string) {
-  const base = process.env.NEXT_PUBLIC_SERVER_URL || 'http://localhost:3000'
+  // Las URLs relativas son archivos servidos por esta misma app: el fetch puede
+  // ir directo a localhost, sin pasar por la URL pública ni el proxy.
+  const base =
+    process.env.INTERNAL_SERVER_URL || `http://127.0.0.1:${process.env.PORT || 3000}`
   const fullUrl = url.startsWith('http') ? url : `${base}${url}`
   const res = await fetch(fullUrl)
   if (!res.ok) throw new Error(`No se pudo descargar ${fullUrl} (${res.status})`)

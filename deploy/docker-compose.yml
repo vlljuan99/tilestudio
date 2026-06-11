@@ -1,0 +1,45 @@
+# ----------------------------------------------------------------------------
+# Tilestudio multi-cliente — stack base (Hetzner)
+#
+# Servicios fijos: Caddy (reverse proxy + TLS) y Postgres 17.
+# Cada cliente es un contenedor propio que se añade con:
+#   ./add-client.sh <slug> [dominio]
+# El script genera clients/<slug>/compose.yml y lo registra en `include:`.
+#
+# Variables (en /opt/tilestudio/.env):
+#   POSTGRES_PASSWORD — password del superusuario de Postgres
+#   PUBLIC_HOST       — host base sin dominio propio (ej: 1.2.3.4.sslip.io)
+# ----------------------------------------------------------------------------
+
+name: tilestudio
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./sites:/etc/caddy/sites:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Define POSTGRES_PASSWORD en /opt/tilestudio/.env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  caddy_data:
+  caddy_config:
+  pgdata:

@@ -1,0 +1,4 @@
+# Los archivos que se ejecutan en el servidor Linux deben ir con LF siempre
+*.sh text eol=lf
+deploy/** text eol=lf
+Dockerfile text eol=lf

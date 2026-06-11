@@ -1,0 +1,19 @@
+#cloud-config
+# Bootstrap del servidor Hetzner para Tilestudio.
+# Se pasa como user-data al crear el servidor; instala Docker, añade swap
+# (el build de Next.js tira de RAM) y programa el backup diario.
+
+package_update: true
+packages:
+  - ca-certificates
+  - curl
+
+swap:
+  filename: /swapfile
+  size: 2G
+  maxsize: 2G
+
+runcmd:
+  - curl -fsSL https://get.docker.com | sh
+  - mkdir -p /opt/tilestudio
+  - printf '0 4 * * * root /opt/tilestudio/backup.sh >> /var/log/tilestudio-backup.log 2>&1\n' > /etc/cron.d/tilestudio-backup

@@ -42,10 +42,13 @@ function pickDatabaseAdapter() {
       pool: {
         connectionString: uri,
         // SSL para conexiones gestionadas (Heroku Postgres, Neon, Supabase).
-        // Localhost / contenedor en la misma red no lo necesitan.
-        ssl: uri.includes('localhost') || uri.includes('127.0.0.1')
-          ? false
-          : { rejectUnauthorized: false },
+        // Localhost, contenedor en la misma red o `?sslmode=disable` no lo necesitan.
+        ssl:
+          uri.includes('sslmode=disable') ||
+          uri.includes('localhost') ||
+          uri.includes('127.0.0.1')
+            ? false
+            : { rejectUnauthorized: false },
       },
       // En staging sincronizamos el schema en cada arranque (sin migraciones
       // manuales). Para producción real sería mejor generar migraciones y
