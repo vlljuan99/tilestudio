@@ -1,0 +1,15 @@
+# Tilestudio Hub — panel de gestión multi-cliente.
+# Opera el stack a través del socket de Docker; el directorio del proyecto se
+# monta en la MISMA ruta para que los paths relativos de compose coincidan.
+# Requiere /opt/tilestudio/hub.env con HUB_PASSWORD_HASH, HUB_SESSION_SECRET y SERVER_IP.
+
+services:
+  hub:
+    image: tilestudio-hub:latest
+    restart: unless-stopped
+    env_file:
+      - hub.env
+    working_dir: /opt/tilestudio
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - .:/opt/tilestudio

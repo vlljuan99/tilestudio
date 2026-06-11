@@ -30,12 +30,22 @@ Internet ──► Caddy ──► app-helvagres ─┐
 └── backups/
 ```
 
+## El Hub (panel de gestión)
+
+`hub/` es un panel web (servicio `hub` del compose, definido en
+`hub-compose.yml`) desde el que se hace todo sin terminal: alta/baja de
+clientes con usuario admin automático, dominios con DNS en Cloudflare,
+logs, reinicios y rebuilds. Acceso protegido por contraseña
+(`HUB_PASSWORD_HASH` bcrypt en `/opt/tilestudio/hub.env`). La integración
+DNS se configura desde el propio hub (Ajustes → DNS y dominio).
+
 ## Operaciones frecuentes
 
 | Qué | Cómo |
 |---|---|
+| Casi todo | El Hub: `https://hub.<dominio>` (o `https://hub.<IP>.sslip.io` sin dominio) |
 | Desplegar código nuevo | `.\deploy\deploy.ps1` (desde tu Windows) |
-| Alta de cliente | `ssh root@IP` → `cd /opt/tilestudio && ./add-client.sh <slug> [dominio]` |
+| Alta de cliente (manual) | `ssh root@IP` → `cd /opt/tilestudio && ./add-client.sh <slug> [dominio]` |
 | Logs de un cliente | `docker compose logs -f app-<slug>` |
 | Reiniciar un cliente | `docker compose restart app-<slug>` |
 | Conectar a una BD | `docker compose exec postgres psql -U postgres tilestudio_<slug>` |
@@ -72,9 +82,12 @@ o un segundo servidor.
 
 1. Crear servidor en Hetzner (Ubuntu 24.04) con `cloud-init.yaml` como
    user-data y la clave SSH `tilestudio_hetzner`.
-2. Copiar `docker-compose.yml`, `Caddyfile` y los `.sh` a `/opt/tilestudio/`.
-3. Crear `/opt/tilestudio/.env` (POSTGRES_PASSWORD, PUBLIC_HOST) y
-   `shared.env` (keys de IA).
+2. Copiar `docker-compose.yml`, `hub-compose.yml`, `Caddyfile` y los `.sh` a
+   `/opt/tilestudio/`.
+3. Crear `/opt/tilestudio/.env` (POSTGRES_PASSWORD, PUBLIC_HOST),
+   `shared.env` (keys de IA) y `hub.env` (HUB_PASSWORD_HASH bcrypt,
+   HUB_SESSION_SECRET, SERVER_IP) — sin `hub.env` compose no arranca.
 4. `docker compose up -d caddy postgres`
-5. `.\deploy\deploy.ps1` para construir la imagen.
-6. `./add-client.sh <slug>` por cada cliente.
+5. `.\deploy\deploy.ps1` para construir las imágenes (app + hub).
+6. `docker compose up -d hub` y crear `sites/hub.caddy`.
+7. Altas de clientes desde el hub (o `./add-client.sh <slug>`).

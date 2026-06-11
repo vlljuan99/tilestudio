@@ -50,8 +50,13 @@ playwright-report
 Dockerfile
 .dockerignore
 fly.toml
+heroku.yml
 DEPLOY.md
 README.md
+
+# El hub y la infra de deploy no forman parte de la imagen de la app
+hub
+deploy
 
 # Claude / configuración local
 .claude

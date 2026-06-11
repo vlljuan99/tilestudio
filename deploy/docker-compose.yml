@@ -43,3 +43,6 @@ volumes:
   caddy_data:
   caddy_config:
   pgdata:
+
+include:
+  - hub-compose.yml

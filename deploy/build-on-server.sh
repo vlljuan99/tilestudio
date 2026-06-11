@@ -14,6 +14,11 @@ tar -xzf src.tar.gz -C src
 
 docker build -t tilestudio:latest src
 
+# El hub se construye aparte (imagen pequeña; .dockerignore lo excluye de la app)
+if [[ -d src/hub ]]; then
+  docker build -t tilestudio-hub:latest src/hub
+fi
+
 # `up -d` recrea solo los contenedores cuya imagen ha cambiado
 docker compose up -d --remove-orphans
 docker image prune -f >/dev/null
