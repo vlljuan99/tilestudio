@@ -107,7 +107,7 @@ ${error ? `<div class="err">${esc(error)}</div>` : ''}
 }
 
 export function dashboard({ clients, statuses, sizes, settings, publicHost, notice, error }) {
-  const dnsReady = Boolean(settings.cfToken && settings.cfZoneId)
+  const dnsReady = Boolean(settings.ionosKey && settings.ionosZoneId)
   const rows = clients
     .map((c) => {
       const st = statuses[`app-${c.slug}`]
@@ -209,33 +209,33 @@ export function logsPage(slug, logs) {
 }
 
 export function settingsPage({ settings, serverIp, notice, error }) {
-  const ns = settings.cfNameServers || []
   return layout('DNS y dominio', `
 ${notice ? `<div class="notice">${esc(notice)}</div>` : ''}
 ${error ? `<div class="notice error">${esc(error)}</div>` : ''}
 <div class="card">
-<h2>Dominio base + Cloudflare</h2>
+<h2>Dominio base + DNS de IONOS</h2>
 <p class="muted">Con esto configurado, cada cliente nuevo sale automáticamente en
-<strong>&lt;slug&gt;.${esc(settings.baseDomain || 'tudominio.com')}</strong> con DNS creado en Cloudflare
-y HTTPS automático. IP del servidor: <code class="cred">${esc(serverIp)}</code></p>
+<strong>&lt;slug&gt;.${esc(settings.baseDomain || 'tudominio.com')}</strong> con el registro DNS creado
+en IONOS y HTTPS automático (Let's Encrypt vía Caddy). IP del servidor:
+<code class="cred">${esc(serverIp)}</code></p>
 <form method="post" action="/settings">
-  <label>Dominio base (el que tienes en IONOS, ej. tilestudio.es)</label>
+  <label>Dominio base (tu dominio de IONOS, ej. tilestudio.es)</label>
   <input name="baseDomain" value="${esc(settings.baseDomain || '')}" placeholder="tilestudio.es">
-  <label>API token de Cloudflare (permiso Zone → DNS → Edit sobre esa zona)</label>
-  <input name="cfToken" type="password" placeholder="${settings.cfToken ? '(configurado — escribe solo para cambiarlo)' : 'pega aquí el token'}">
+  <label>API key de IONOS (formato prefijo.secreto)</label>
+  <input name="ionosKey" type="password" placeholder="${settings.ionosKey ? '(configurada — escribe solo para cambiarla)' : 'publicprefix.secret'}">
   <label style="display:flex;align-items:center;gap:8px;margin-top:12px">
     <input type="checkbox" name="applyHub" checked style="width:auto"> Activar también hub.&lt;dominio&gt; con HTTPS para este panel
   </label>
   <button style="margin-top:14px">Guardar y verificar</button>
 </form>
-${settings.cfZoneId ? `<p class="muted" style="margin-top:14px">Zona: <strong>${esc(settings.baseDomain)}</strong> · estado: <strong>${esc(settings.cfZoneStatus || '?')}</strong>${settings.cfZoneStatus !== 'active' && ns.length ? `<br>Para activarla, pon estos nameservers en IONOS (sustituyen a los suyos): <strong>${esc(ns.join(' · '))}</strong>` : ''}</p>` : ''}
+${settings.ionosZoneId ? `<p class="muted" style="margin-top:14px">Zona conectada: <strong>${esc(settings.baseDomain)}</strong> ✓</p>` : ''}
 </div>
 <div class="card">
-<h2>Cómo se conecta (una vez)</h2>
+<h2>Cómo crear la API key (una vez)</h2>
 <ol class="muted">
-  <li>Crea cuenta gratuita en <a href="https://dash.cloudflare.com" target="_blank">Cloudflare</a> y pulsa «Add a domain» con tu dominio de IONOS (plan Free).</li>
-  <li>Cloudflare te dará 2 nameservers. En el panel de IONOS → Dominios → Nameservers, sustituye los de IONOS por esos 2 (tarda de minutos a horas en propagar).</li>
-  <li>En Cloudflare → My Profile → API Tokens → «Create Token» → plantilla «Edit zone DNS», limita a tu zona, y pega aquí el token.</li>
+  <li>Entra en <a href="https://developer.hosting.ionos.es" target="_blank">developer.hosting.ionos.es</a> con tu cuenta de IONOS.</li>
+  <li>Menú «API Keys» (o «Claves de API») → crear una nueva.</li>
+  <li>Te dará un <strong>prefijo público</strong> y un <strong>secreto</strong> (el secreto solo se muestra una vez). Pega aquí los dos juntos con un punto: <code class="cred">prefijo.secreto</code></li>
 </ol>
 </div>`)
 }

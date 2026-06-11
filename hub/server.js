@@ -7,7 +7,7 @@ import {
   loginAllowed, registerLogin, verifyPassword, newSessionCookie, validSession,
 } from './lib/auth.js'
 import { getSettings, saveSettings, getPublicHost } from './lib/settings.js'
-import { findZone, upsertARecord } from './lib/cloudflare.js'
+import { findZone, upsertARecord } from './lib/ionos.js'
 import {
   SLUG_RE, slugify, listClients, containerStatuses, dbSizes, createClient,
   restartClient, clientLogs, setDomain, deleteClient, reloadCaddy,
@@ -162,41 +162,31 @@ app.get('/settings', (req, res) => {
 app.post('/settings', async (req, res) => {
   const settings = getSettings()
   const baseDomain = (req.body.baseDomain || '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '')
-  const cfToken = (req.body.cfToken || '').trim() || settings.cfToken
+  const ionosKey = (req.body.ionosKey || '').trim() || settings.ionosKey
   try {
     if (!baseDomain) throw new Error('Indica el dominio base.')
-    if (!cfToken) throw new Error('Falta el API token de Cloudflare.')
-    const zone = await findZone(cfToken, baseDomain)
+    if (!ionosKey) throw new Error('Falta la API key de IONOS (formato prefijo.secreto).')
+    const zone = await findZone(ionosKey, baseDomain)
     if (!zone) {
       throw new Error(
-        `El token funciona pero no ve la zona «${baseDomain}». ¿Has añadido el dominio en Cloudflare y dado permiso al token sobre esa zona?`,
+        `La API key funciona pero no veo la zona «${baseDomain}» en esa cuenta de IONOS. ¿El dominio está en esa cuenta y usa los nameservers de IONOS?`,
       )
     }
-    Object.assign(settings, {
-      baseDomain,
-      cfToken,
-      cfZoneId: zone.id,
-      cfZoneStatus: zone.status,
-      cfNameServers: zone.name_servers || [],
-    })
+    Object.assign(settings, { baseDomain, ionosKey, ionosZoneId: zone.id })
     saveSettings(settings)
 
     let hubNote = ''
     if (req.body.applyHub) {
       const hubDomain = `hub.${baseDomain}`
-      await upsertARecord(cfToken, zone.id, hubDomain, process.env.SERVER_IP)
+      await upsertARecord(ionosKey, zone.id, hubDomain, process.env.SERVER_IP)
       fs.writeFileSync(
         path.join(TS_DIR, 'sites', 'hub.caddy'),
         `${hubDomain} {\n\tencode gzip\n\treverse_proxy hub:3000\n}\n\nhttps://hub.${getPublicHost()} {\n\ttls internal\n\treverse_proxy hub:3000\n}\n`,
       )
       await reloadCaddy()
-      hubNote = ` Este panel también estará en https://${hubDomain} en cuanto la zona esté activa.`
+      hubNote = ` Este panel también estará en https://${hubDomain} en cuanto el DNS propague (minutos).`
     }
-    const pending =
-      zone.status !== 'active'
-        ? ` La zona aún no está activa: cambia los nameservers en IONOS a ${(zone.name_servers || []).join(' y ')}.`
-        : ''
-    res.redirect(`/settings?ok=${encodeURIComponent(`Configuración guardada y verificada.${pending}${hubNote}`)}`)
+    res.redirect(`/settings?ok=${encodeURIComponent(`Configuración guardada y verificada contra IONOS.${hubNote}`)}`)
   } catch (err) {
     res.redirect(`/settings?err=${encodeURIComponent(err.message)}`)
   }

@@ -34,7 +34,7 @@ Internet ──► Caddy ──► app-helvagres ─┐
 
 `hub/` es un panel web (servicio `hub` del compose, definido en
 `hub-compose.yml`) desde el que se hace todo sin terminal: alta/baja de
-clientes con usuario admin automático, dominios con DNS en Cloudflare,
+clientes con usuario admin automático, dominios con DNS en IONOS,
 logs, reinicios y rebuilds. Acceso protegido por contraseña
 (`HUB_PASSWORD_HASH` bcrypt en `/opt/tilestudio/hub.env`). La integración
 DNS se configura desde el propio hub (Ajustes → DNS y dominio).
@@ -56,20 +56,20 @@ La clave SSH es `~/.ssh/tilestudio_hetzner` (usuario `root`).
 
 ## Dominios
 
-- **Sin dominio (ahora):** cada cliente responde en
+El DNS se gestiona en **IONOS** (donde está registrado el dominio) a través
+de su API (`hub/lib/ionos.js`), configurada desde el hub en «DNS y dominio»
+(dominio base + API key de developer.hosting.ionos.es).
+
+- **Sin dominio configurado:** cada cliente responde en
   `http://<slug>.<IP>.sslip.io` (sslip.io resuelve cualquier subdominio a la
   IP embebida — no hay que configurar nada).
-- **Con dominio en Cloudflare (futuro):**
-  1. Añadir el dominio a Cloudflare (plan Free) y apuntar un registro `A`
-     (`<slug>` o `*`) a la IP del servidor. Para que Caddy emita el
-     certificado, dejar el registro en "DNS only" (nube gris) o usar modo
-     SSL "Full (strict)" tras emitirse.
-  2. En el servidor, editar `sites/<slug>.caddy`: cambiar la dirección
-     `http://...sslip.io` por el dominio real (sin `http://`).
-  3. Actualizar `NEXT_PUBLIC_SERVER_URL` en `clients/<slug>/.env`.
-  4. `docker compose up -d app-<slug> && docker compose exec -w /etc/caddy caddy caddy reload`
-- **Dominio propio del cliente:** igual, pero el cliente apunta su DNS a
-  nuestra IP. `add-client.sh <slug> <dominio>` ya lo deja listo desde el alta.
+- **Con el dominio base configurado:** el alta desde el hub crea
+  automáticamente el registro `A` de `<slug>.<dominio>` en IONOS y Caddy
+  emite el certificado Let's Encrypt solo. El cambio de dominio de un
+  cliente existente se hace desde el hub («Más → Aplicar dominio»).
+- **Dominio propio del cliente:** el cliente apunta un registro `A` de su
+  dominio a nuestra IP; desde el hub se le asigna ese dominio y Caddy emite
+  el certificado.
 
 ## Escalado
 

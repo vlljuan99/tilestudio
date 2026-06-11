@@ -3,7 +3,7 @@ import path from 'node:path'
 import crypto from 'node:crypto'
 import { sh, compose, bash, TS_DIR } from './sh.js'
 import { getSettings, getPublicHost } from './settings.js'
-import { upsertARecord, deleteARecord } from './cloudflare.js'
+import { upsertARecord, deleteARecord } from './ionos.js'
 
 const CLIENTS_DIR = path.join(TS_DIR, 'clients')
 const SERVER_IP = process.env.SERVER_IP
@@ -102,16 +102,16 @@ export async function reloadCaddy() {
   await compose(['exec', '-T', '-w', '/etc/caddy', 'caddy', 'caddy', 'reload'])
 }
 
-// Si el dominio cuelga del dominio base y Cloudflare está configurado,
+// Si el dominio cuelga del dominio base y la API de IONOS está configurada,
 // crea/actualiza el registro A. Devuelve una nota informativa para la UI.
 async function ensureDns(domain) {
   if (!domain) return ''
   const s = getSettings()
-  if (s.cfToken && s.cfZoneId && s.baseDomain && domain.endsWith(`.${s.baseDomain}`)) {
-    await upsertARecord(s.cfToken, s.cfZoneId, domain, SERVER_IP)
-    return `Registro DNS ${domain} → ${SERVER_IP} creado en Cloudflare.`
+  if (s.ionosKey && s.ionosZoneId && s.baseDomain && domain.endsWith(`.${s.baseDomain}`)) {
+    await upsertARecord(s.ionosKey, s.ionosZoneId, domain, SERVER_IP)
+    return `Registro DNS ${domain} → ${SERVER_IP} creado en IONOS (propaga en unos minutos).`
   }
-  return `Este dominio no se gestiona desde Cloudflare: apunta un registro A de ${domain} a ${SERVER_IP}.`
+  return `Este dominio no se gestiona desde IONOS: apunta un registro A de ${domain} a ${SERVER_IP}.`
 }
 
 async function waitForHealth(slug, tries = 40) {
@@ -236,9 +236,9 @@ export async function deleteClient(slug) {
 
   // Limpieza del registro DNS si lo gestionábamos nosotros
   const s = getSettings()
-  if (meta.domain && s.cfToken && s.cfZoneId && s.baseDomain && meta.domain.endsWith(`.${s.baseDomain}`)) {
+  if (meta.domain && s.ionosKey && s.ionosZoneId && s.baseDomain && meta.domain.endsWith(`.${s.baseDomain}`)) {
     try {
-      await deleteARecord(s.cfToken, s.cfZoneId, meta.domain)
+      await deleteARecord(s.ionosKey, s.ionosZoneId, meta.domain)
     } catch {}
   }
   return { backups: [`backups/${slug}-final-${ts}.sql.gz`, `backups/${slug}-media-${ts}.tar.gz`] }
