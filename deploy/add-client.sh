@@ -79,6 +79,17 @@ $SITE {
 }
 EOF
 
+# Con dominio propio, la URL de staging (por IP, sin DNS) sigue sirviendo
+if [[ -n "$DOMAIN" ]]; then
+  cat >> "sites/$SLUG.caddy" <<EOF
+
+http://$SLUG.$PUBLIC_HOST {
+	encode gzip
+	reverse_proxy app-$SLUG:3000
+}
+EOF
+fi
+
 # 8. Arrancar contenedor y recargar proxy
 docker compose up -d "app-$SLUG"
 docker compose exec -w /etc/caddy caddy caddy reload

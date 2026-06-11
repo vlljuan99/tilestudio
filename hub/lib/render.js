@@ -121,6 +121,7 @@ export function dashboard({ clients, statuses, sizes, settings, publicHost, noti
       <div class="muted pubstate" data-slug="${esc(c.slug)}">${running ? esc(st.status) : st ? `⚠ ${esc(st.status || st.state)}` : '⚠ sin contenedor'}</div></td>
   <td class="actions">
     <a class="btn" href="${esc(c.url)}/admin" target="_blank">Admin</a>
+    ${c.domain ? `<a class="btn" href="http://${esc(c.slug)}.${esc(publicHost)}" target="_blank" title="Acceso directo por IP, funciona aunque el DNS del dominio aún no responda">Staging</a>` : ''}
     <a class="btn" href="/clients/${esc(c.slug)}/logs">Logs</a>
     <form method="post" action="/clients/${esc(c.slug)}/restart"><button>Reiniciar</button></form>
     <details>
@@ -208,13 +209,14 @@ refreshStatus()
 </div>`)
 }
 
-export function clientCreated({ name, url, dnsNote, creds, credsError }) {
+export function clientCreated({ name, url, staging, dnsNote, creds, credsError }) {
   return layout('Cliente creado', `
 <div class="notice">Cliente «${esc(name)}» creado y funcionando.</div>
 <div class="card">
   <h2>Datos de la tienda</h2>
   <p>URL: <a href="${esc(url)}" target="_blank">${esc(url)}</a><br>
   Admin: <a href="${esc(url)}/admin" target="_blank">${esc(url)}/admin</a></p>
+  ${staging ? `<p class="muted">Mientras el DNS del dominio propaga, puedes verla ya en staging: <a href="${esc(staging)}" target="_blank">${esc(staging)}</a></p>` : ''}
   ${dnsNote ? `<p class="muted">${esc(dnsNote)}</p>` : ''}
   ${creds ? `<h2 style="margin-top:18px">Credenciales del administrador — guárdalas ahora, no se vuelven a mostrar</h2>
   <p>Email: <code class="cred">${esc(creds.email)}</code><br><br>

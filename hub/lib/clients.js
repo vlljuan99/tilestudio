@@ -110,6 +110,10 @@ export async function publicStatuses(clients) {
 export const clientUrl = (slug, domain) =>
   domain ? `https://${domain}` : `http://${slug}.${getPublicHost()}`
 
+// URL de staging: siempre resuelve (sslip.io lleva la IP embebida), sin
+// depender de DNS ni certificados. Útil mientras el dominio real propaga.
+export const stagingUrl = (slug) => `http://${slug}.${getPublicHost()}`
+
 // ¿Es un dominio raíz (helvagres.es) y no un subdominio (tienda.helvagres.es)?
 const isApex = (domain) => domain.split('.').length === 2
 
@@ -122,6 +126,8 @@ function caddySite(slug, domain) {
   if (isApex(domain)) {
     conf += `\nwww.${domain} {\n\tredir https://${domain}{uri} permanent\n}\n`
   }
+  // La URL de staging sigue sirviendo la tienda aunque haya dominio
+  conf += `\n${stagingUrl(slug)} {\n\tencode gzip\n\treverse_proxy app-${slug}:3000\n}\n`
   return conf
 }
 
@@ -197,9 +203,9 @@ export async function createClient({ name, slug, domain, adminEmail, adminName }
   if (finalDomain) args.push(finalDomain)
   await sh('bash', args, { timeout: 10 * 60_000 })
 
-  // El site de Caddy lo reescribimos nosotros: añade el redirect de www
-  // en dominios raíz, que add-client.sh no genera.
-  if (finalDomain && isApex(finalDomain)) {
+  // El site de Caddy lo reescribimos nosotros: añade la URL de staging y,
+  // en dominios raíz, el redirect de www — add-client.sh no genera ninguno.
+  if (finalDomain) {
     fs.writeFileSync(path.join(TS_DIR, 'sites', `${slug}.caddy`), caddySite(slug, finalDomain))
     await reloadCaddy()
   }
@@ -220,7 +226,13 @@ export async function createClient({ name, slug, domain, adminEmail, adminName }
       credsError = err.message
     }
   }
-  return { url: clientUrl(slug, finalDomain), dnsNote, creds, credsError }
+  return {
+    url: clientUrl(slug, finalDomain),
+    staging: finalDomain ? stagingUrl(slug) : null,
+    dnsNote,
+    creds,
+    credsError,
+  }
 }
 
 export async function restartClient(slug) {
