@@ -14,4 +14,5 @@ COPY . .
 ENV NODE_ENV=production
 ENV PORT=3000
 
-CMD ["node", "server.js"]
+# Ruta absoluta: el cwd puede venir pisado desde compose
+CMD ["node", "/hub/server.js"]

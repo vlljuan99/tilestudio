@@ -9,7 +9,6 @@ services:
     restart: unless-stopped
     env_file:
       - hub.env
-    working_dir: /opt/tilestudio
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - .:/opt/tilestudio
