@@ -10,7 +10,7 @@ import { getSettings, saveSettings, getPublicHost } from './lib/settings.js'
 import { findZone, upsertARecord } from './lib/ionos.js'
 import {
   SLUG_RE, slugify, listClients, containerStatuses, dbSizes, createClient,
-  restartClient, clientLogs, setDomain, deleteClient, reloadCaddy,
+  restartClient, clientLogs, setDomain, deleteClient, reloadCaddy, publicStatuses,
 } from './lib/clients.js'
 import {
   loginPage, dashboard, clientCreated, logsPage, settingsPage, buildLogPage, errorPage,
@@ -66,6 +66,23 @@ app.use((req, res, next) => {
 const flash = (req) => ({ notice: req.query.ok || '', error: req.query.err || '' })
 const redirectMsg = (res, ok, err) =>
   res.redirect(`/?${ok ? `ok=${encodeURIComponent(ok)}` : `err=${encodeURIComponent(err)}`}`)
+
+// Estado en vivo para el semáforo del dashboard (lo consulta JS cada 20 s)
+app.get('/api/status', async (_req, res) => {
+  const clients = listClients()
+  const [statuses, pub] = await Promise.all([containerStatuses(), publicStatuses(clients)])
+  res.json(
+    clients.map((c) => {
+      const st = statuses[`app-${c.slug}`]
+      return {
+        slug: c.slug,
+        running: st?.state === 'running',
+        publicOk: Boolean(pub[c.slug]),
+        status: st?.status || 'sin contenedor',
+      }
+    }),
+  )
+})
 
 app.get('/', async (req, res) => {
   const [statuses, sizes] = await Promise.all([containerStatuses(), dbSizes()])

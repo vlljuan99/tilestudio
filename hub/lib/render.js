@@ -40,6 +40,7 @@ export function layout(title, body) {
   tr:last-child td { border-bottom:none; }
   .dot { display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:7px; }
   .dot.ok { background:var(--ok); } .dot.bad { background:var(--bad); }
+  .dot.warn { background:var(--warn); }
   .muted { color:var(--muted); font-size:13px; }
   input, select { background:#10131a; color:var(--text); border:1px solid var(--line);
           border-radius:7px; padding:8px 10px; font:inherit; width:100%; }
@@ -114,10 +115,10 @@ export function dashboard({ clients, statuses, sizes, settings, publicHost, noti
       const running = st?.state === 'running'
       const size = sizes[`tilestudio_${c.slug.replaceAll('-', '_')}`] || '—'
       return `<tr>
-  <td><span class="dot ${running ? 'ok' : 'bad'}"></span><strong>${esc(c.name)}</strong>
+  <td><span class="dot ${running ? 'ok' : 'bad'}" data-slug="${esc(c.slug)}"></span><strong>${esc(c.name)}</strong>
       <div class="muted">${esc(c.slug)} · BD ${esc(size)}</div></td>
   <td><a href="${esc(c.url)}" target="_blank">${esc(c.url.replace(/^https?:\/\//, ''))}</a>
-      <div class="muted">${running ? esc(st.status) : st ? `⚠ ${esc(st.status || st.state)}` : '⚠ sin contenedor'}</div></td>
+      <div class="muted pubstate" data-slug="${esc(c.slug)}">${running ? esc(st.status) : st ? `⚠ ${esc(st.status || st.state)}` : '⚠ sin contenedor'}</div></td>
   <td class="actions">
     <a class="btn" href="${esc(c.url)}/admin" target="_blank">Admin</a>
     <a class="btn" href="/clients/${esc(c.slug)}/logs">Logs</a>
@@ -170,6 +171,29 @@ ${clients.length ? `<table><tr><th>Cliente</th><th>URL</th><th>Acciones</th></tr
   </div>
 </form>
 </div>
+
+<script>
+// Semáforo en vivo: verde = en línea por su URL pública (DNS+TLS OK),
+// ámbar = contenedor vivo pero aún no accesible (DNS/certificado en camino),
+// rojo = contenedor caído. Se refresca cada 20 s sin recargar la página.
+async function refreshStatus() {
+  try {
+    const r = await fetch('/api/status')
+    if (!r.ok) return
+    for (const c of await r.json()) {
+      const dot = document.querySelector('.dot[data-slug="' + c.slug + '"]')
+      const txt = document.querySelector('.pubstate[data-slug="' + c.slug + '"]')
+      if (!dot) continue
+      dot.className = 'dot ' + (c.running ? (c.publicOk ? 'ok' : 'warn') : 'bad')
+      if (txt) txt.textContent = c.running
+        ? (c.publicOk ? 'En línea — responde por su URL pública' : 'Contenedor vivo; esperando DNS o certificado…')
+        : '⚠ ' + c.status
+    }
+  } catch {}
+}
+setInterval(refreshStatus, 20000)
+refreshStatus()
+</script>
 
 <div class="card">
 <h2>Sistema</h2>

@@ -90,6 +90,23 @@ export async function dbSizes() {
 
 export const dbName = (slug) => `tilestudio_${slug.replaceAll('-', '_')}`
 
+// Comprueba si cada tienda responde por su URL PÚBLICA (DNS + proxy + TLS).
+// Distingue "contenedor vivo" de "accesible de verdad desde internet".
+export async function publicStatuses(clients) {
+  const results = {}
+  await Promise.all(
+    clients.map(async (c) => {
+      try {
+        const res = await fetch(`${c.url}/api/health`, { signal: AbortSignal.timeout(5000) })
+        results[c.slug] = res.ok
+      } catch {
+        results[c.slug] = false
+      }
+    }),
+  )
+  return results
+}
+
 export const clientUrl = (slug, domain) =>
   domain ? `https://${domain}` : `http://${slug}.${getPublicHost()}`
 
