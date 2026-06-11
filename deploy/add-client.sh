@@ -24,6 +24,9 @@ DIR="clients/$SLUG"
 
 [[ -d "$DIR" ]] && { echo "El cliente $SLUG ya existe ($DIR)"; exit 1; }
 mkdir -p "$DIR/media"
+# La app corre como uid 1001 (usuario nextjs de la imagen); sin esto el
+# bind-mount queda en manos de root y las subidas fallan con EACCES.
+chown -R 1001:1001 "$DIR/media"
 
 # 1. Base de datos propia del cliente
 docker compose exec -T postgres psql -U postgres -tc \
