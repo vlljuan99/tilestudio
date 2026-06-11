@@ -14,6 +14,15 @@
  */
 ;(process.env as Record<string, string>).NODE_ENV = 'development'
 
+// Misma lógica que payload.config.ts: localhost, red Docker con
+// `?sslmode=disable`, o BD gestionada (SSL sin verificar CA).
+function needsSsl(uri: string): false | { rejectUnauthorized: boolean } {
+  if (uri.includes('sslmode=disable') || uri.includes('localhost') || uri.includes('127.0.0.1')) {
+    return false
+  }
+  return { rejectUnauthorized: false }
+}
+
 async function dropConflictingExtensionViews() {
   // Heroku Postgres viene con la extensión `pg_stat_statements` instalada por
   // defecto, que crea las views `pg_stat_statements` y
@@ -29,7 +38,7 @@ async function dropConflictingExtensionViews() {
   if (!uri || !uri.startsWith('postgres')) return
   const client = new Client({
     connectionString: uri,
-    ssl: uri.includes('localhost') ? false : { rejectUnauthorized: false },
+    ssl: needsSsl(uri),
   })
   await client.connect()
   try {
@@ -46,7 +55,7 @@ async function restoreExtensions() {
   if (!uri || !uri.startsWith('postgres')) return
   const client = new Client({
     connectionString: uri,
-    ssl: uri.includes('localhost') ? false : { rejectUnauthorized: false },
+    ssl: needsSsl(uri),
   })
   await client.connect()
   try {

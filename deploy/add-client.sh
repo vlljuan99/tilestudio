@@ -65,7 +65,12 @@ grep -q "^include:" docker-compose.yml || printf '\ninclude:\n' >> docker-compos
 grep -q "$DIR/compose.yml" docker-compose.yml ||
   sed -i "/^include:/a\\  - $DIR/compose.yml" docker-compose.yml
 
-# 6. Ruta en Caddy
+# 6. Sincronizar el esquema de Payload en la BD nueva.
+#    En producción Payload NO hace push automático del esquema; db-push.ts
+#    fuerza NODE_ENV=development solo durante esta sincronización inicial.
+docker compose run --rm --no-deps "app-$SLUG" npm run db:push
+
+# 7. Ruta en Caddy
 mkdir -p sites
 cat > "sites/$SLUG.caddy" <<EOF
 $SITE {
@@ -74,7 +79,7 @@ $SITE {
 }
 EOF
 
-# 7. Arrancar contenedor y recargar proxy
+# 8. Arrancar contenedor y recargar proxy
 docker compose up -d "app-$SLUG"
 docker compose exec -w /etc/caddy caddy caddy reload
 
