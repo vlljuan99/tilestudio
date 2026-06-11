@@ -3,7 +3,7 @@ import path from 'node:path'
 import crypto from 'node:crypto'
 import { sh, compose, bash, TS_DIR } from './sh.js'
 import { getSettings, getPublicHost } from './settings.js'
-import { upsertARecord, deleteARecord } from './ionos.js'
+import { upsertARecord, deleteARecord, findZoneFor } from './ionos.js'
 
 const CLIENTS_DIR = path.join(TS_DIR, 'clients')
 const SERVER_IP = process.env.SERVER_IP
@@ -93,25 +93,46 @@ export const dbName = (slug) => `tilestudio_${slug.replaceAll('-', '_')}`
 export const clientUrl = (slug, domain) =>
   domain ? `https://${domain}` : `http://${slug}.${getPublicHost()}`
 
+// ¿Es un dominio raíz (helvagres.es) y no un subdominio (tienda.helvagres.es)?
+const isApex = (domain) => domain.split('.').length === 2
+
 function caddySite(slug, domain) {
-  const site = domain || `http://${slug}.${getPublicHost()}`
-  return `${site} {\n\tencode gzip\n\treverse_proxy app-${slug}:3000\n}\n`
+  if (!domain) {
+    return `http://${slug}.${getPublicHost()} {\n\tencode gzip\n\treverse_proxy app-${slug}:3000\n}\n`
+  }
+  let conf = `${domain} {\n\tencode gzip\n\treverse_proxy app-${slug}:3000\n}\n`
+  // En dominio raíz, www redirige al principal (con su propio certificado)
+  if (isApex(domain)) {
+    conf += `\nwww.${domain} {\n\tredir https://${domain}{uri} permanent\n}\n`
+  }
+  return conf
 }
 
 export async function reloadCaddy() {
   await compose(['exec', '-T', '-w', '/etc/caddy', 'caddy', 'caddy', 'reload'])
 }
 
-// Si el dominio cuelga del dominio base y la API de IONOS está configurada,
-// crea/actualiza el registro A. Devuelve una nota informativa para la UI.
+// Crea/actualiza el registro A del dominio en CUALQUIER zona de la cuenta de
+// IONOS (el dominio del propio cliente, p. ej. helvagres.es, o un subdominio
+// del dominio base). En dominio raíz crea también el www. Si el dominio no
+// está en la cuenta, devuelve las instrucciones para el registrador externo.
 async function ensureDns(domain) {
   if (!domain) return ''
   const s = getSettings()
-  if (s.ionosKey && s.ionosZoneId && s.baseDomain && domain.endsWith(`.${s.baseDomain}`)) {
-    await upsertARecord(s.ionosKey, s.ionosZoneId, domain, SERVER_IP)
-    return `Registro DNS ${domain} → ${SERVER_IP} creado en IONOS (propaga en unos minutos).`
+  const externalNote =
+    `«${domain}» no está en tu cuenta de IONOS. El cliente (o su registrador) debe crear ` +
+    `un registro A de ${domain}${isApex(domain) ? ` y de www.${domain}` : ''} apuntando a ${SERVER_IP}. ` +
+    `El certificado HTTPS se emitirá solo en cuanto el DNS apunte aquí.`
+  if (!s.ionosKey) return externalNote
+  const zone = await findZoneFor(s.ionosKey, domain)
+  if (!zone) return externalNote
+  await upsertARecord(s.ionosKey, zone.id, domain, SERVER_IP)
+  let note = `Registro DNS ${domain} → ${SERVER_IP} creado en IONOS (zona ${zone.name}, propaga en minutos).`
+  if (domain === zone.name) {
+    await upsertARecord(s.ionosKey, zone.id, `www.${domain}`, SERVER_IP)
+    note += ` También www.${domain}, que redirige al principal.`
   }
-  return `Este dominio no se gestiona desde IONOS: apunta un registro A de ${domain} a ${SERVER_IP}.`
+  return note
 }
 
 async function waitForHealth(slug, tries = 40) {
@@ -158,6 +179,13 @@ export async function createClient({ name, slug, domain, adminEmail, adminName }
   const args = ['add-client.sh', slug]
   if (finalDomain) args.push(finalDomain)
   await sh('bash', args, { timeout: 10 * 60_000 })
+
+  // El site de Caddy lo reescribimos nosotros: añade el redirect de www
+  // en dominios raíz, que add-client.sh no genera.
+  if (finalDomain && isApex(finalDomain)) {
+    fs.writeFileSync(path.join(TS_DIR, 'sites', `${slug}.caddy`), caddySite(slug, finalDomain))
+    await reloadCaddy()
+  }
 
   fs.writeFileSync(
     path.join(CLIENTS_DIR, slug, 'client.json'),
@@ -234,11 +262,15 @@ export async function deleteClient(slug) {
   fs.renameSync(path.join(CLIENTS_DIR, slug), path.join(CLIENTS_DIR, `_deleted-${slug}-${ts}`))
   await reloadCaddy()
 
-  // Limpieza del registro DNS si lo gestionábamos nosotros
+  // Limpieza de los registros DNS si los gestionábamos nosotros
   const s = getSettings()
-  if (meta.domain && s.ionosKey && s.ionosZoneId && s.baseDomain && meta.domain.endsWith(`.${s.baseDomain}`)) {
+  if (meta.domain && s.ionosKey) {
     try {
-      await deleteARecord(s.ionosKey, s.ionosZoneId, meta.domain)
+      const zone = await findZoneFor(s.ionosKey, meta.domain)
+      if (zone) {
+        await deleteARecord(s.ionosKey, zone.id, meta.domain)
+        if (meta.domain === zone.name) await deleteARecord(s.ionosKey, zone.id, `www.${meta.domain}`)
+      }
     } catch {}
   }
   return { backups: [`backups/${slug}-final-${ts}.sql.gz`, `backups/${slug}-media-${ts}.tar.gz`] }

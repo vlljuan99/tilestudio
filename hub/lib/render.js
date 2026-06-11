@@ -126,7 +126,7 @@ export function dashboard({ clients, statuses, sizes, settings, publicHost, noti
       <summary>Más</summary>
       <form method="post" action="/clients/${esc(c.slug)}/domain" style="margin:8px 0">
         <label>Dominio (vacío = volver a ${esc(c.slug)}.${esc(publicHost)})</label>
-        <input name="domain" value="${esc(c.domain || '')}" placeholder="${esc(c.slug)}.tudominio.com">
+        <input name="domain" value="${esc(c.domain || '')}" placeholder="${esc(c.slug)}.es">
         <button style="margin-top:6px">Aplicar dominio</button>
       </form>
       <form method="post" action="/clients/${esc(c.slug)}/delete"
@@ -159,8 +159,8 @@ ${clients.length ? `<table><tr><th>Cliente</th><th>URL</th><th>Acciones</th></tr
     <div><label>Slug (se genera solo si lo dejas vacío)</label><input name="slug" placeholder="helvagres" pattern="[a-z0-9][a-z0-9-]{1,28}[a-z0-9]"></div>
   </div>
   <div class="row">
-    <div><label>Dominio (opcional${settings.baseDomain ? ` — por defecto &lt;slug&gt;.${esc(settings.baseDomain)}` : ''})</label>
-         <input name="domain" placeholder="${settings.baseDomain ? `cliente.${esc(settings.baseDomain)}` : 'catalogo.cliente.es'}"></div>
+    <div><label>Dominio del cliente (si está en tu cuenta de IONOS, DNS y www salen solos${settings.baseDomain ? `; vacío = demo en &lt;slug&gt;.${esc(settings.baseDomain)}` : ''})</label>
+         <input name="domain" placeholder="helvagres.es"></div>
     <div><label>Email del admin de la tienda (crea el usuario y te da la contraseña)</label>
          <input name="adminEmail" type="email" placeholder="gerente@cliente.es"></div>
   </div>
@@ -213,11 +213,13 @@ export function settingsPage({ settings, serverIp, notice, error }) {
 ${notice ? `<div class="notice">${esc(notice)}</div>` : ''}
 ${error ? `<div class="notice error">${esc(error)}</div>` : ''}
 <div class="card">
-<h2>Dominio base + DNS de IONOS</h2>
-<p class="muted">Con esto configurado, cada cliente nuevo sale automáticamente en
-<strong>&lt;slug&gt;.${esc(settings.baseDomain || 'tudominio.com')}</strong> con el registro DNS creado
-en IONOS y HTTPS automático (Let's Encrypt vía Caddy). IP del servidor:
-<code class="cred">${esc(serverIp)}</code></p>
+<h2>DNS de IONOS + tu dominio</h2>
+<p class="muted">La API key da acceso a <strong>todas las zonas de tu cuenta de IONOS</strong>:
+si el dominio de un cliente (helvagres.es, agumasa.es…) está registrado en tu cuenta, el hub
+crea su DNS (y el www) automáticamente al asignarlo, con HTTPS de Let's Encrypt vía Caddy.
+Tu dominio base se usa para este panel (hub.&lt;dominio&gt;) y para tiendas en demo sin dominio
+propio todavía. Dominios fuera de tu cuenta: el cliente apunta un registro A a
+<code class="cred">${esc(serverIp)}</code> y listo.</p>
 <form method="post" action="/settings">
   <label>Dominio base (tu dominio de IONOS, ej. tilestudio.es)</label>
   <input name="baseDomain" value="${esc(settings.baseDomain || '')}" placeholder="tilestudio.es">

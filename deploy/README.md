@@ -56,20 +56,22 @@ La clave SSH es `~/.ssh/tilestudio_hetzner` (usuario `root`).
 
 ## Dominios
 
-El DNS se gestiona en **IONOS** (donde está registrado el dominio) a través
-de su API (`hub/lib/ionos.js`), configurada desde el hub en «DNS y dominio»
-(dominio base + API key de developer.hosting.ionos.es).
+Cada cliente usa **su propio dominio** (helvagres.es, agumasa.es…). El DNS
+se gestiona con la API de IONOS (`hub/lib/ionos.js`), configurada desde el
+hub en «DNS y dominio» (API key de developer.hosting.ionos.es). La key da
+acceso a todas las zonas de la cuenta.
 
-- **Sin dominio configurado:** cada cliente responde en
-  `http://<slug>.<IP>.sslip.io` (sslip.io resuelve cualquier subdominio a la
-  IP embebida — no hay que configurar nada).
-- **Con el dominio base configurado:** el alta desde el hub crea
-  automáticamente el registro `A` de `<slug>.<dominio>` en IONOS y Caddy
-  emite el certificado Let's Encrypt solo. El cambio de dominio de un
-  cliente existente se hace desde el hub («Más → Aplicar dominio»).
-- **Dominio propio del cliente:** el cliente apunta un registro `A` de su
-  dominio a nuestra IP; desde el hub se le asigna ese dominio y Caddy emite
-  el certificado.
+- **Dominio del cliente en NUESTRA cuenta de IONOS (modelo agencia,
+  recomendado):** al asignarlo desde el hub se crean solos el registro `A`,
+  el `www` (con redirect al principal) y el certificado Let's Encrypt.
+- **Dominio del cliente en su propio registrador:** el hub muestra las
+  instrucciones (registro `A` → IP del servidor); cuando el DNS apunta,
+  Caddy emite el certificado solo.
+- **Sin dominio todavía (demo):** `<slug>.<dominio-base>` si hay dominio
+  base configurado, o `http://<slug>.<IP>.sslip.io` si no.
+
+El dominio base (el nuestro) se usa solo para el hub (`hub.<dominio>`) y
+para demos — los clientes nunca lo ven en producción.
 
 ## Escalado
 

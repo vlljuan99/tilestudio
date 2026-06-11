@@ -31,6 +31,20 @@ export async function findZone(apiKey, domain) {
   return (zones || []).find((z) => z.name === domain) || null
 }
 
+// Busca la zona de la cuenta que cubre un dominio cualquiera:
+// "helvagres.es" → zona helvagres.es; "tienda.agumasa.es" → zona agumasa.es.
+// Devuelve null si el dominio no está en esta cuenta de IONOS.
+export async function findZoneFor(apiKey, domain) {
+  const zones = await ionos(apiKey, '/zones')
+  let best = null
+  for (const z of zones || []) {
+    if (domain === z.name || domain.endsWith(`.${z.name}`)) {
+      if (!best || z.name.length > best.name.length) best = z
+    }
+  }
+  return best
+}
+
 async function findARecords(apiKey, zoneId, fqdn) {
   const zone = await ionos(
     apiKey,
