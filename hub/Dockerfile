@@ -3,7 +3,9 @@
 # del socket /var/run/docker.sock, y bash/openssl para add-client.sh.
 FROM node:20-alpine
 
-RUN apk add --no-cache docker-cli docker-cli-compose bash openssl curl
+# buildx es imprescindible: sin él, docker build cae al builder legacy sin
+# caché de BuildKit y cada deploy reconstruye la imagen desde cero (~3x más lento)
+RUN apk add --no-cache docker-cli docker-cli-buildx docker-cli-compose bash openssl curl
 
 WORKDIR /hub
 COPY package.json ./
