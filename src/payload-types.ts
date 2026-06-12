@@ -1077,6 +1077,10 @@ export interface SiteSetting {
   tagline?: string | null;
   logo?: (number | null) | Media;
   /**
+   * Icono pequeño que aparece en la pestaña del navegador. Recomendado: PNG cuadrado de 32×32 o 64×64 px.
+   */
+  favicon?: (number | null) | Media;
+  /**
    * Formato internacional sin signos: ej. 34600000000. Usado para wa.me/<numero>.
    */
   whatsappNumber?: string | null;
@@ -1143,6 +1147,7 @@ export interface SiteSettingsSelect<T extends boolean = true> {
   siteName?: T;
   tagline?: T;
   logo?: T;
+  favicon?: T;
   whatsappNumber?: T;
   phone?: T;
   email?: T;

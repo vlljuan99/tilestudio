@@ -27,6 +27,16 @@ export const SiteSettings: GlobalConfig = {
               defaultValue: 'Showroom de azulejos con simulación visual por IA',
             },
             { name: 'logo', label: 'Logo', type: 'upload', relationTo: 'media' },
+            {
+              name: 'favicon',
+              label: 'Favicon (icono de pestaña)',
+              type: 'upload',
+              relationTo: 'media',
+              admin: {
+                description:
+                  'Icono pequeño que aparece en la pestaña del navegador. Recomendado: PNG cuadrado de 32×32 o 64×64 px.',
+              },
+            },
           ],
         },
         {

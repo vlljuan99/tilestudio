@@ -151,6 +151,9 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link rel="stylesheet" href={fontsHref} />
         <style dangerouslySetInnerHTML={{ __html: themeVars }} />
+        {settings?.favicon && typeof settings.favicon === 'object' && settings.favicon.url && (
+          <link rel="icon" href={settings.favicon.url} />
+        )}
       </head>
       <body className="min-h-screen flex flex-col">
         <SiteHeader settings={settings} />
