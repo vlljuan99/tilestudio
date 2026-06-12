@@ -47,3 +47,6 @@ Thumbs.db
 !.vscode/launch.json
 !.vscode/extensions.json
 .idea/
+
+# dumps de prueba del extractor PDF
+/tmp/

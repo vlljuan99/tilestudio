@@ -247,29 +247,40 @@ export async function extractEmbeddedImages(
   for (const ref of refs) {
     let img: any = null
     try {
-      img = await new Promise((resolve, reject) => {
-        try {
-          const r = page.objs.get(ref.name, (data: any) => resolve(data))
-          if (r) resolve(r)
-        } catch (e) {
-          reject(e)
-        }
-      })
+      // objs.get con callback no resuelve nunca si el objeto no llega a
+      // decodificarse — timeout defensivo para no colgar el worker.
+      img = await Promise.race([
+        new Promise((resolve, reject) => {
+          try {
+            const r = page.objs.get(ref.name, (data: any) => resolve(data))
+            if (r) resolve(r)
+          } catch (e) {
+            reject(e)
+          }
+        }),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error(`objs.get(${ref.name}) timeout`)), 15_000),
+        ),
+      ])
     } catch {
       continue
     }
     if (!img?.data || !img.width || !img.height) continue
     if (img.width < minWidth || img.height < minHeight) continue
 
-    // Calcular bbox del CTM
+    // Calcular bbox del CTM transformando las 4 esquinas del cuadrado unidad
+    // (las imágenes PDF se pintan en (0,0)–(1,1) y luego se aplica el CTM).
+    // Así soportamos espejados (scale negativo) y rotaciones — con el método
+    // anterior (origen + sqrt de los vectores) una imagen espejada salía
+    // colocada en el lado contrario de la página.
     const [a, b, c, d, e, f] = ref.ctm
-    const wPt = Math.sqrt(a * a + b * b)
-    const hPt = Math.sqrt(c * c + d * d)
+    const xs = [e, a + e, c + e, a + c + e]
+    const ys = [f, b + f, d + f, b + d + f]
     // pdfjs viewport origin top-left, PDF origin bottom-left → flip y
-    const x1raw = e
-    const y1raw = VH - f - hPt
-    const x2raw = x1raw + wPt
-    const y2raw = y1raw + hPt
+    const x1raw = Math.min(...xs)
+    const y1raw = VH - Math.max(...ys)
+    const x2raw = Math.max(...xs)
+    const y2raw = VH - Math.min(...ys)
 
     const x1 = Math.max(0, Math.min(1, x1raw / VW))
     const y1 = Math.max(0, Math.min(1, y1raw / VH))

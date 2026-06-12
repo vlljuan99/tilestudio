@@ -126,13 +126,17 @@ function findAmbientImage(
 
 export type Candidate = {
   id: string
-  /** página del PDF donde aparece (1-based) */
+  /** página del PDF donde aparece (1-based; la primera en que se vio) */
   page: number
+  /** todas las páginas donde apareció esta variante (tras fusionar duplicados) */
+  pages?: number[]
   brand?: string | null
   collection?: string | null
   seriesName?: string | null
   variantName: string
   sku?: string | null
+  /** Código de color impreso (RAL / NCS / Pantone). */
+  colorCode?: string | null
   formats?: string[]
   finishes?: string[]
   dominantColor?: string | null
@@ -144,6 +148,10 @@ export type Candidate = {
   /** Crop de la textura. */
   textureImageUrl?: string
   textureMediaId?: number | string
+  /** Procedencia de la textura: embebida original del PDF o crop del render. */
+  textureSource?: 'embedded' | 'crop'
+  /** Área en píxeles de la textura subida (para elegir la mejor al fusionar). */
+  textureArea?: number
   /** Crop de la foto ambiente compartida con todas las variantes de la misma página. */
   ambientImageUrl?: string
   ambientMediaId?: number | string
@@ -157,6 +165,100 @@ type BBox = [number, number, number, number]
 
 function makeCandidateId(page: number, idx: number): string {
   return `p${page}_${idx}_${Math.random().toString(36).slice(2, 8)}`
+}
+
+// =============================================================================
+// Fusión de candidatos duplicados entre páginas
+// =============================================================================
+//
+// La misma variante suele aparecer en varias páginas del catálogo: paleta de
+// colores, textura a página completa y ficha técnica. Sin fusión, el admin ve
+// 3 candidatos "Cōre White" con datos parciales cada uno. Fusionamos por nombre
+// normalizado y nos quedamos con lo mejor de cada aparición.
+
+/** Clave de fusión: nombre sin diacríticos (ō→o), minúsculas, espacios colapsados. */
+function candidateKey(name: string): string {
+  return name
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+}
+
+/** "60X120" / "60 × 120" → "60x120" para deduplicar formatos. */
+function normalizeFormat(f: string): string {
+  return f.toLowerCase().replace(/\s+/g, '').replace(/×/g, 'x')
+}
+
+/** "cōre ivory" / "CŌRE IVORY" → "Cōre Ivory" — los catálogos rotulan los
+ * nombres en minúsculas o versales según la página; unificamos para que el
+ * nombre del producto quede presentable. */
+function titleCase(s: string): string {
+  return s.replace(/\S+/g, (w) => w[0].toUpperCase() + w.slice(1).toLowerCase())
+}
+
+function unionList(
+  a: string[] | undefined,
+  b: string[] | undefined,
+  normalize: (s: string) => string = (s) => s.toLowerCase().trim(),
+): string[] {
+  const out: string[] = []
+  const seen = new Set<string>()
+  for (const item of [...(a || []), ...(b || [])]) {
+    if (!item) continue
+    const k = normalize(item)
+    if (seen.has(k) || !k) continue
+    seen.add(k)
+    out.push(item)
+  }
+  return out
+}
+
+/**
+ * Fusiona `incoming` dentro de `existing` (misma variante vista en otra página).
+ * Mantiene la mejor textura (embebida > crop; a igualdad, mayor área) y rellena
+ * los huecos de datos sin pisar lo ya extraído.
+ */
+function mergeInto(existing: Candidate, incoming: Candidate): void {
+  existing.pages = Array.from(new Set([...(existing.pages || [existing.page]), incoming.page])).sort(
+    (a, b) => a - b,
+  )
+  existing.formats = unionList(existing.formats, incoming.formats, normalizeFormat)
+  existing.finishes = unionList(existing.finishes, incoming.finishes)
+  existing.usage = unionList(existing.usage, incoming.usage)
+  existing.rooms = unionList(existing.rooms, incoming.rooms)
+  if (!existing.sku && incoming.sku) existing.sku = incoming.sku
+  if (!existing.colorCode && incoming.colorCode) existing.colorCode = incoming.colorCode
+  if (!existing.dominantColor && incoming.dominantColor) {
+    existing.dominantColor = incoming.dominantColor
+  }
+  if (!existing.seriesName && incoming.seriesName) existing.seriesName = incoming.seriesName
+  if (!existing.brand && incoming.brand) existing.brand = incoming.brand
+  if (!existing.collection && incoming.collection) existing.collection = incoming.collection
+  if ((incoming.description?.length || 0) > (existing.description?.length || 0)) {
+    existing.description = incoming.description
+  }
+
+  // Textura: embebida gana a crop; dentro del mismo origen, la de mayor área.
+  const tierOf = (c: Candidate) => (c.textureSource === 'embedded' ? 1 : 0)
+  const incomingBetter =
+    incoming.textureMediaId &&
+    (!existing.textureMediaId ||
+      tierOf(incoming) > tierOf(existing) ||
+      (tierOf(incoming) === tierOf(existing) &&
+        (incoming.textureArea || 0) > (existing.textureArea || 0)))
+  if (incomingBetter) {
+    existing.textureMediaId = incoming.textureMediaId
+    existing.textureImageUrl = incoming.textureImageUrl
+    existing.textureSource = incoming.textureSource
+    existing.textureArea = incoming.textureArea
+  }
+
+  if (!existing.ambientMediaId && incoming.ambientMediaId) {
+    existing.ambientMediaId = incoming.ambientMediaId
+    existing.ambientImageUrl = incoming.ambientImageUrl
+  }
 }
 
 /**
@@ -310,6 +412,10 @@ export async function runPdfImport(importId: number | string) {
 
     const doc = await loadPdf(pdfBuffer)
     const allCandidates: Candidate[] = []
+    /** variantName normalizado → candidato ya creado (para fusionar duplicados) */
+    const candidateIndex = new Map<string, Candidate>()
+    /** ambientes con callouts de producto, a la espera de su variante (puede salir en otra página) */
+    const pendingAmbients = new Map<string, { id: number | string; url: string }>()
     let brandDetected: string | null = null
     let collectionDetected: string | null = null
     let processed = 0
@@ -343,8 +449,13 @@ export async function runPdfImport(importId: number | string) {
       //  4. Matchear cada candidato a un SWATCH cercano en posición (no a un ambient).
       //  5. El ambient es la imagen más grande (con preferencia por el bbox del LLM).
       try {
-        // 1. Imágenes embebidas
-        const allEmbedded = await extractEmbeddedImages(doc, page.pageNumber)
+        // 1. Imágenes embebidas. Umbral bajo (120px): los swatches de las
+        //    páginas de paleta rondan los 170×340; los iconos/logos (~28px)
+        //    siguen quedando fuera.
+        const allEmbedded = await extractEmbeddedImages(doc, page.pageNumber, {
+          minWidth: 120,
+          minHeight: 120,
+        })
 
         // 2. Separar ambient(s) de swatches: las imágenes con área notablemente
         //    mayor que la mediana son fotos de ambiente; el resto son swatches.
@@ -374,7 +485,26 @@ export async function runPdfImport(importId: number | string) {
           collectionDetected = result.collectionDetected
         }
 
-        const products = result.products || []
+        // Tipos de página que por definición no presentan variantes. Si el LLM
+        // devuelve products en una de ellas (le pasa con los peldaños/piezas
+        // especiales pese al prompt), nos fiamos del pageType y los ignoramos.
+        const NO_PRODUCT_PAGE_TYPES = new Set([
+          'cover',
+          'index',
+          'graphic-variation',
+          'special-pieces',
+          'other',
+        ])
+        const pageHasProducts = !NO_PRODUCT_PAGE_TYPES.has(result.pageType || '')
+        if (!pageHasProducts && (result.products?.length || 0) > 0) {
+          console.warn(
+            `[PdfImport] p.${page.pageNumber}: ${result.products!.length} products ignorados (pageType=${result.pageType})`,
+          )
+        }
+        const products = pageHasProducts
+          ? (result.products || []).filter((p) => p.variantName?.trim())
+          : []
+        const ambientProductNames = (result.ambientProducts || []).filter(Boolean)
         const candidateBboxes = products.map((p) => p.textureBbox)
 
         // 4. Matching: solo entre swatches y candidatos (no ambients)
@@ -382,32 +512,48 @@ export async function runPdfImport(importId: number | string) {
         const usedEmbedded = new Set<EmbeddedImage>()
         for (const img of candidateMatches.values()) usedEmbedded.add(img)
 
-        // 5. Ambient: buscamos entre los ambientCandidates primero; si no hay,
-        //    caemos al pool global (puede que algún spread no separe bien).
+        // 5. Ambient: solo si hay con quién enlazarlo (productos en esta página
+        //    o callouts que nombran variantes de otras). El LLM solo da
+        //    ambientBbox para fotos de estancia real, no texturas.
         let sharedAmbient: { id: number | string; url: string } | undefined
-        const ambientPool = ambientCandidates.length > 0 ? ambientCandidates : allEmbedded
-        const ambientImg = findAmbientImage(ambientPool, usedEmbedded, result.ambientBbox)
-        if (ambientImg) {
-          sharedAmbient = await uploadMedia(
-            payload,
-            ambientImg.jpeg,
-            `pdf-import-${importId}-p${page.pageNumber}-ambient.jpg`,
-            `Ambiente p.${page.pageNumber}`,
-          )
-        } else if (result.ambientBbox) {
-          // Fallback: si no encontramos embedded apto, recortamos del render
-          const ambientCrop = await cropFromPage(page.renderJpeg, result.ambientBbox)
-          if (ambientCrop) {
+        if (
+          result.ambientBbox &&
+          (products.length > 0 || ambientProductNames.length > 0)
+        ) {
+          const ambientPool = ambientCandidates.length > 0 ? ambientCandidates : allEmbedded
+          const ambientImg = findAmbientImage(ambientPool, usedEmbedded, result.ambientBbox)
+          if (ambientImg) {
             sharedAmbient = await uploadMedia(
               payload,
-              ambientCrop,
+              ambientImg.jpeg,
               `pdf-import-${importId}-p${page.pageNumber}-ambient.jpg`,
               `Ambiente p.${page.pageNumber}`,
             )
+          } else {
+            // Fallback: si no encontramos embedded apto, recortamos del render
+            const ambientCrop = await cropFromPage(page.renderJpeg, result.ambientBbox)
+            if (ambientCrop) {
+              sharedAmbient = await uploadMedia(
+                payload,
+                ambientCrop,
+                `pdf-import-${importId}-p${page.pageNumber}-ambient.jpg`,
+                `Ambiente p.${page.pageNumber}`,
+              )
+            }
           }
         }
 
-        // 5. Construir candidatos con la imagen embebida matcheada (o fallback)
+        // Registrar el ambiente para las variantes que nombran sus callouts
+        // (p.ej. "CŌRE MIX TAUPE" en la foto de la paleta Cōre) — la variante
+        // puede aparecer en una página posterior.
+        if (sharedAmbient) {
+          for (const name of ambientProductNames) {
+            const key = candidateKey(name)
+            if (key && !pendingAmbients.has(key)) pendingAmbients.set(key, sharedAmbient)
+          }
+        }
+
+        // 6. Construir candidatos con la imagen embebida matcheada (o fallback)
         const newCandidates: Candidate[] = []
         for (let idx = 0; idx < products.length; idx++) {
           const p = products[idx]
@@ -420,6 +566,8 @@ export async function runPdfImport(importId: number | string) {
             .replace(/(^-|-$)/g, '')
 
           let texture: { id: number | string; url: string } | undefined
+          let textureSource: Candidate['textureSource']
+          let textureArea = 0
           if (matchedImg) {
             texture = await uploadMedia(
               payload,
@@ -427,6 +575,8 @@ export async function runPdfImport(importId: number | string) {
               `pdf-import-${importId}-p${page.pageNumber}-${safeName}.jpg`,
               `Textura ${p.variantName} (${matchedImg.width}×${matchedImg.height})`,
             )
+            textureSource = 'embedded'
+            textureArea = matchedImg.width * matchedImg.height
           } else if (p.textureBbox) {
             // Fallback al crop del render si el matching falló
             const tCrop = await cropFromPage(page.renderJpeg, p.textureBbox)
@@ -437,12 +587,16 @@ export async function runPdfImport(importId: number | string) {
                 `pdf-import-${importId}-p${page.pageNumber}-${safeName}.jpg`,
                 `Textura ${p.variantName} (crop)`,
               )
+              textureSource = 'crop'
+              const tMeta = await sharp(tCrop).metadata()
+              textureArea = (tMeta.width || 0) * (tMeta.height || 0)
             }
           }
 
           newCandidates.push({
             id: makeCandidateId(page.pageNumber, idx),
             page: page.pageNumber,
+            pages: [page.pageNumber],
             brand: result.brandDetected ?? brandDetected,
             collection: result.collectionDetected ?? collectionDetected,
             pageImageUrl: pageMedia?.url,
@@ -451,12 +605,42 @@ export async function runPdfImport(importId: number | string) {
             ambientMediaId: sharedAmbient?.id,
             textureImageUrl: texture?.url,
             textureMediaId: texture?.id,
+            textureSource,
+            textureArea,
             reviewStatus: 'pending',
             ...p,
+            variantName: titleCase(p.variantName),
+            seriesName: p.seriesName ? titleCase(p.seriesName) : p.seriesName,
           })
         }
 
-        allCandidates.push(...newCandidates)
+        // 7. Fusionar con lo ya extraído: la misma variante puede aparecer en
+        //    la paleta, en una textura a página completa y en la ficha técnica.
+        let addedCount = 0
+        let mergedCount = 0
+        for (const cand of newCandidates) {
+          const key = candidateKey(cand.variantName)
+          const existing = candidateIndex.get(key)
+          if (existing) {
+            mergeInto(existing, cand)
+            mergedCount++
+          } else {
+            candidateIndex.set(key, cand)
+            allCandidates.push(cand)
+            addedCount++
+          }
+        }
+
+        // 8. Rellenar ambientes pendientes (callouts que nombraban variantes
+        //    extraídas antes o ahora).
+        for (const cand of allCandidates) {
+          if (cand.ambientMediaId) continue
+          const pending = pendingAmbients.get(candidateKey(cand.variantName))
+          if (pending) {
+            cand.ambientMediaId = pending.id
+            cand.ambientImageUrl = pending.url
+          }
+        }
 
         await payload.update({
           collection: 'pdf-imports',
@@ -464,7 +648,7 @@ export async function runPdfImport(importId: number | string) {
           data: {
             extractedItems: allCandidates,
             candidatesCount: allCandidates.length,
-            currentStep: `Página ${page.pageNumber}: ${newCandidates.length} candidatos`,
+            currentStep: `Página ${page.pageNumber}: ${addedCount} candidatos nuevos${mergedCount > 0 ? `, ${mergedCount} fusionados` : ''}`,
           } as any,
         })
       } catch (err) {

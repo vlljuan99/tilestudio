@@ -34,11 +34,18 @@ async function main() {
     try {
       const result = await extractor.extract(base64, page.text)
       const ms = Date.now() - startTs
-      console.log(`✓ ${ms}ms - brand=${result.brandDetected} col=${result.collectionDetected} products=${result.products.length}`)
-      if (result.products.length > 0) {
-        for (const p of result.products.slice(0, 3)) {
-          console.log(`   • ${p.variantName} | sku=${p.sku} | formats=${p.formats?.join('/')} | bbox=${p.textureBbox?.map(n => n.toFixed(2)).join(',')}`)
-        }
+      console.log(
+        `✓ ${ms}ms - type=${result.pageType} brand=${result.brandDetected} col=${result.collectionDetected} products=${result.products.length}`,
+      )
+      if (result.ambientBbox) {
+        console.log(
+          `   ambient=[${result.ambientBbox.map((n) => n.toFixed(2)).join(',')}] products=[${(result.ambientProducts || []).join(' | ')}]`,
+        )
+      }
+      for (const p of result.products) {
+        console.log(
+          `   • ${p.variantName} | sku=${p.sku} | color=${p.colorCode ?? '-'} | formats=${p.formats?.join('/') || '-'} | fin=${p.finishes?.join('/') || '-'} | bbox=${p.textureBbox?.map((n) => n.toFixed(2)).join(',') ?? '-'}`,
+        )
       }
     } catch (err) {
       const ms = Date.now() - startTs

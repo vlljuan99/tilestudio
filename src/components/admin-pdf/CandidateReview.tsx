@@ -6,11 +6,13 @@ import Link from 'next/link'
 type Candidate = {
   id: string
   page: number
+  pages?: number[]
   brand?: string | null
   collection?: string | null
   seriesName?: string | null
   variantName: string
   sku?: string | null
+  colorCode?: string | null
   formats?: string[]
   finishes?: string[]
   dominantColor?: string | null
@@ -18,6 +20,9 @@ type Candidate = {
   usage?: string[]
   rooms?: string[]
   pageImageUrl?: string
+  textureImageUrl?: string
+  ambientImageUrl?: string
+  textureSource?: 'embedded' | 'crop'
   reviewStatus: 'pending' | 'accepted' | 'rejected'
 }
 
@@ -197,8 +202,15 @@ function CandidateRow({
             : 'border-border'
       }`}
     >
-      <div>
-        {c.pageImageUrl ? (
+      <div className="space-y-2">
+        {c.textureImageUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={c.textureImageUrl}
+            alt={`Textura ${c.variantName}`}
+            className="w-full aspect-square object-cover rounded border border-border"
+          />
+        ) : c.pageImageUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={c.pageImageUrl}
@@ -210,7 +222,31 @@ function CandidateRow({
             sin preview
           </div>
         )}
-        <p className="text-xs text-muted-foreground mt-1">página {c.page} del PDF</p>
+        <div className="flex gap-2">
+          {c.ambientImageUrl && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={c.ambientImageUrl}
+              alt="Ambiente"
+              title="Foto ambiente"
+              className="w-1/2 aspect-[4/3] object-cover rounded border border-border"
+            />
+          )}
+          {c.textureImageUrl && c.pageImageUrl && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={c.pageImageUrl}
+              alt={`Página ${c.page}`}
+              title="Página completa"
+              className="w-1/2 aspect-[4/3] object-cover rounded border border-border"
+            />
+          )}
+        </div>
+        <p className="text-xs text-muted-foreground">
+          {c.pages && c.pages.length > 1 ? `páginas ${c.pages.join(', ')}` : `página ${c.page}`} del
+          PDF
+          {c.textureSource === 'embedded' ? ' · textura original' : ''}
+        </p>
       </div>
 
       <div className="grid grid-cols-2 gap-3">
@@ -221,6 +257,11 @@ function CandidateRow({
           label="Color dominante"
           value={c.dominantColor || ''}
           onChange={(v) => onChange({ dominantColor: v })}
+        />
+        <Field
+          label="Código color (RAL/NCS)"
+          value={c.colorCode || ''}
+          onChange={(v) => onChange({ colorCode: v })}
         />
         <Field
           label="Formatos (coma)"

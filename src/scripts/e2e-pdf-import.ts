@@ -75,7 +75,7 @@ async function main() {
 
   console.log(`\n5. Polling cada 3s…`)
   let lastStep = ''
-  for (let i = 0; i < 60; i++) {
+  for (let i = 0; i < 300; i++) {
     await new Promise((r) => setTimeout(r, 3000))
     const doc = (await payload.findByID({ collection: 'pdf-imports', id: importDoc.id })) as any
     const line = `   [${i * 3}s] status=${doc.status} | p=${doc.processedPages || 0}/${doc.totalPages || '?'} | ${doc.progressPercent || 0}% | cand=${doc.candidatesCount || 0} | ${doc.currentStep || ''}`

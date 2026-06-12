@@ -8,11 +8,13 @@ export const maxDuration = 300
 type Candidate = {
   id: string
   page: number
+  pages?: number[]
   brand?: string | null
   collection?: string | null
   seriesName?: string | null
   variantName: string
   sku?: string | null
+  colorCode?: string | null
   formats?: string[]
   finishes?: string[]
   dominantColor?: string | null
@@ -25,6 +27,7 @@ type Candidate = {
   ambientMediaId?: number | string
   textureImageUrl?: string
   textureMediaId?: number | string
+  textureSource?: 'embedded' | 'crop'
   reviewStatus: 'pending' | 'accepted' | 'rejected'
 }
 
@@ -118,6 +121,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   const createdTileIds: (number | string)[] = []
+  /** candidato → tile creado, para enlazar ambientes después */
+  const createdPairs: Array<{ candidate: Candidate; tileId: number | string }> = []
   const errors: string[] = []
 
   for (const c of accepted) {
@@ -180,6 +185,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         slug = `${baseSlug}-${i++}`
       }
 
+      // El tile solo enlaza un formato/acabado; el resto de datos extraídos
+      // (todos los formatos, acabados, código RAL/NCS…) van a attributesJson
+      // para no perderlos.
+      const attributes: Record<string, unknown> = {}
+      if ((c.formats?.length || 0) > 1) attributes.formats = c.formats
+      if ((c.finishes?.length || 0) > 1) attributes.finishes = c.finishes
+      if (c.colorCode) attributes.colorCode = c.colorCode
+      if (c.seriesName) attributes.series = c.seriesName
+
       const tile = await payload.create({
         collection: 'tiles',
         data: {
@@ -199,12 +213,77 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           published: true,
           featured: false,
           aiReady: false,
+          attributesJson: Object.keys(attributes).length > 0 ? attributes : undefined,
         } as any,
       })
 
       createdTileIds.push(tile.id)
+      createdPairs.push({ candidate: c, tileId: tile.id })
     } catch (err) {
       errors.push(`Error en "${c.variantName}": ${(err as Error).message}`)
+    }
+  }
+
+  // Crear documentos Ambients: una foto de ambiente compartida por varios
+  // azulejos → un Ambiente con todos ellos en tilesUsed. Solo fotos de
+  // ambiente reales (ambientMediaId), nunca el render de página.
+  let createdAmbients = 0
+  const byAmbient = new Map<string, Array<{ candidate: Candidate; tileId: number | string }>>()
+  for (const pair of createdPairs) {
+    const ambId = pair.candidate.ambientMediaId
+    if (!ambId) continue
+    const key = String(ambId)
+    if (!byAmbient.has(key)) byAmbient.set(key, [])
+    byAmbient.get(key)!.push(pair)
+  }
+  for (const [ambKey, pairs] of byAmbient) {
+    try {
+      const ambId = pairs[0].candidate.ambientMediaId!
+      // Evitar duplicados si se vuelve a publicar: ¿ya hay un ambiente con esta imagen?
+      const existing = await payload.find({
+        collection: 'ambients',
+        where: { image: { equals: ambId } },
+        limit: 1,
+      })
+      if (existing.docs.length > 0) continue
+
+      const first = pairs[0].candidate
+      const names = pairs.map((p) => p.candidate.variantName)
+      const title =
+        names.length === 1
+          ? `Ambiente ${names[0]}`
+          : `Ambiente ${first.seriesName || first.collection || names[0]}`
+      const baseSlug = slugify(title)
+      let slug = baseSlug
+      let i = 2
+      while (true) {
+        const dup = await payload.find({
+          collection: 'ambients',
+          where: { slug: { equals: slug } },
+          limit: 1,
+        })
+        if (dup.docs.length === 0) break
+        slug = `${baseSlug}-${i++}`
+      }
+
+      const roomName = pairs.flatMap((p) => p.candidate.rooms || [])[0]
+      const roomDoc = roomName ? await findOrCreateByName(payload, 'rooms', roomName) : null
+
+      await payload.create({
+        collection: 'ambients',
+        data: {
+          title,
+          slug,
+          description: `Importado del catálogo (pág. ${first.page}). Azulejos: ${names.join(', ')}.`,
+          image: ambId,
+          tilesUsed: pairs.map((p) => ({ tile: p.tileId })),
+          roomType: roomDoc?.id ?? undefined,
+          published: true,
+        } as any,
+      })
+      createdAmbients++
+    } catch (err) {
+      errors.push(`Error creando ambiente ${ambKey}: ${(err as Error).message}`)
     }
   }
 
@@ -213,7 +292,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     id,
     data: {
       status: 'completed',
-      currentStep: `Publicados ${createdTileIds.length} azulejos. ${errors.length} avisos.`,
+      currentStep: `Publicados ${createdTileIds.length} azulejos y ${createdAmbients} ambientes. ${errors.length} avisos.`,
       createdTiles: createdTileIds,
       completedAt: new Date().toISOString(),
       errorMessage: errors.length > 0 ? errors.join('\n') : undefined,
@@ -223,6 +302,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   return NextResponse.json({
     ok: true,
     createdCount: createdTileIds.length,
+    createdAmbients,
     createdTileIds,
     errors,
   })
