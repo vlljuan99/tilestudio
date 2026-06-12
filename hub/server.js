@@ -14,8 +14,13 @@ import {
 } from './lib/clients.js'
 import {
   loginPage, dashboard, clientCreated, logsPage, settingsPage, buildLogPage, errorPage,
+  deploysPage, deployDetailPage,
 } from './lib/render.js'
-import { bash, TS_DIR } from './lib/sh.js'
+import { compose, TS_DIR } from './lib/sh.js'
+import {
+  getDeployToken, tokenOk, saveTarball, createDeploy, launchDeploy,
+  getDeploy, listDeploys, deployLog, runningDeploy, DEPLOY_ID_RE,
+} from './lib/deploys.js'
 
 const app = express()
 app.set('trust proxy', true)
@@ -33,6 +38,42 @@ function getCookie(req) {
 }
 
 app.get('/healthz', (_req, res) => res.json({ ok: true }))
+
+// --- API de despliegue (GitHub Actions) — autenticación por token, sin sesión ---
+
+// Recibe src.tar.gz (git archive de main) y lanza el pipeline en background.
+app.post('/api/deploy', express.raw({ type: () => true, limit: '100mb' }), async (req, res) => {
+  if (!tokenOk(req.headers.authorization)) return res.status(401).json({ error: 'token inválido' })
+  if (!req.body?.length) return res.status(400).json({ error: 'cuerpo vacío: manda src.tar.gz como body' })
+  const running = runningDeploy()
+  if (running) return res.status(409).json({ error: `ya hay un deploy en curso (${running.id})` })
+  try {
+    saveTarball(req.body)
+    const meta = createDeploy({
+      commit: String(req.headers['x-commit'] || '').slice(0, 40),
+      ref: String(req.headers['x-ref'] || '').slice(0, 100),
+      actor: String(req.headers['x-actor'] || '').slice(0, 100),
+      origin: 'github',
+    })
+    await launchDeploy(meta.id)
+    res.json({ id: meta.id })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+app.get('/api/deploy/:id', (req, res) => {
+  if (!tokenOk(req.headers.authorization)) return res.status(401).json({ error: 'token inválido' })
+  const d = getDeploy(req.params.id)
+  if (!d) return res.status(404).json({ error: 'deploy no encontrado' })
+  res.json(d)
+})
+
+app.get('/api/deploy/:id/log', (req, res) => {
+  if (!tokenOk(req.headers.authorization)) return res.status(401).json({ error: 'token inválido' })
+  if (!DEPLOY_ID_RE.test(req.params.id)) return res.status(400).json({ error: 'id inválido' })
+  res.type('text/plain').send(deployLog(req.params.id))
+})
 
 app.get('/login', (_req, res) => res.send(loginPage()))
 
@@ -173,7 +214,12 @@ app.post('/clients/:slug/delete', async (req, res) => {
 })
 
 app.get('/settings', (req, res) => {
-  res.send(settingsPage({ settings: getSettings(), serverIp: process.env.SERVER_IP, ...flash(req) }))
+  res.send(settingsPage({
+    settings: getSettings(),
+    serverIp: process.env.SERVER_IP,
+    deployToken: getDeployToken(),
+    ...flash(req),
+  }))
 })
 
 app.post('/settings', async (req, res) => {
@@ -209,12 +255,40 @@ app.post('/settings', async (req, res) => {
   }
 })
 
+// Re-despliega con el último src.tar.gz subido (mismo pipeline que GitHub Actions)
 app.post('/system/rebuild', async (_req, res) => {
+  const running = runningDeploy()
+  if (running) return res.redirect(`/system/deploys/${running.id}`)
   try {
-    await bash('nohup bash build-on-server.sh > build.log 2>&1 & echo lanzado')
-    redirectMsg(res, 'Build lanzado. Sigue el progreso en «Ver log del último build».')
+    const meta = createDeploy({ origin: 'manual' })
+    await launchDeploy(meta.id)
+    res.redirect(`/system/deploys/${meta.id}`)
   } catch (err) {
-    redirectMsg(res, null, `No se pudo lanzar el build: ${err.message}`)
+    redirectMsg(res, null, `No se pudo lanzar el deploy: ${err.message}`)
+  }
+})
+
+app.get('/system/deploys', (_req, res) => {
+  res.send(deploysPage({ deploys: listDeploys(15) }))
+})
+
+app.get('/system/deploys/:id', (req, res) => {
+  const d = getDeploy(req.params.id)
+  if (!d) return res.status(404).send(errorPage('Deploy no encontrado'))
+  res.send(deployDetailPage({ deploy: d, log: deployLog(req.params.id) }))
+})
+
+// Sincroniza el esquema de BD de un cliente a mano (db:push con la imagen actual)
+app.post('/clients/:slug/dbpush', async (req, res) => {
+  const slug = validSlug(req, res)
+  if (!slug) return
+  try {
+    await compose(['run', '--rm', '--no-deps', `app-${slug}`, 'npm', 'run', 'db:push'], {
+      timeout: 600_000,
+    })
+    redirectMsg(res, `Esquema de BD de «${slug}» sincronizado.`)
+  } catch (err) {
+    redirectMsg(res, null, `db:push de «${slug}» falló: ${err.message}`)
   }
 })
 

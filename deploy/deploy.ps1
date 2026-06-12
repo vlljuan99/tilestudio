@@ -29,9 +29,9 @@ if ($LASTEXITCODE -ne 0) { throw "scp fallo" }
 # Sincroniza tambien los scripts del servidor (si no, se quedan en la version
 # con la que se provisiono y los cambios del repo nunca llegan)
 Write-Host "-> Sincronizando scripts de deploy..."
-scp -i $key (Join-Path $PSScriptRoot 'add-client.sh') (Join-Path $PSScriptRoot 'backup.sh') (Join-Path $PSScriptRoot 'build-on-server.sh') (Join-Path $PSScriptRoot 'hub-compose.yml') "root@${serverIp}:/opt/tilestudio/"
+scp -i $key (Join-Path $PSScriptRoot 'add-client.sh') (Join-Path $PSScriptRoot 'backup.sh') (Join-Path $PSScriptRoot 'build-on-server.sh') (Join-Path $PSScriptRoot 'deploy-on-server.sh') (Join-Path $PSScriptRoot 'hub-compose.yml') "root@${serverIp}:/opt/tilestudio/"
 if ($LASTEXITCODE -ne 0) { throw "scp de scripts fallo" }
-ssh -i $key "root@$serverIp" "cd /opt/tilestudio; sed -i 's/\r$//' add-client.sh backup.sh build-on-server.sh hub-compose.yml; chmod +x add-client.sh backup.sh build-on-server.sh"
+ssh -i $key "root@$serverIp" "cd /opt/tilestudio; sed -i 's/\r$//' add-client.sh backup.sh build-on-server.sh deploy-on-server.sh hub-compose.yml; chmod +x add-client.sh backup.sh build-on-server.sh deploy-on-server.sh"
 if ($LASTEXITCODE -ne 0) { throw "normalizacion de scripts fallo" }
 
 Write-Host "-> Build remoto (puede tardar varios minutos)..."

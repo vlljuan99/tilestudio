@@ -1,0 +1,81 @@
+# Pipeline de despliegue: cada push a main valida el código y, si pasa, lo
+# manda al hub (hub.tilestudio.es), que reconstruye la imagen, sincroniza el
+# esquema de BD de cada cliente y reinicia las tiendas. El progreso se ve aquí
+# (Actions) y en https://hub.tilestudio.es/system/deploys
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+env:
+  HUB_URL: https://hub.tilestudio.es
+
+jobs:
+  validate:
+    name: Validar (typecheck)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npx tsc --noEmit
+
+  deploy:
+    name: Desplegar en Hetzner vía hub
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Empaquetar HEAD
+        run: git archive --format=tar.gz -o /tmp/src.tar.gz HEAD
+
+      - name: Subir al hub y lanzar deploy
+        id: launch
+        run: |
+          RESPONSE=$(curl -fsS -X POST \
+            -H "Authorization: Bearer ${{ secrets.HUB_DEPLOY_TOKEN }}" \
+            -H "Content-Type: application/gzip" \
+            -H "X-Commit: ${{ github.sha }}" \
+            -H "X-Ref: ${{ github.ref_name }}" \
+            -H "X-Actor: ${{ github.actor }}" \
+            --data-binary @/tmp/src.tar.gz \
+            "$HUB_URL/api/deploy")
+          echo "$RESPONSE"
+          DEPLOY_ID=$(echo "$RESPONSE" | jq -r .id)
+          [ -n "$DEPLOY_ID" ] && [ "$DEPLOY_ID" != "null" ] || { echo "El hub no devolvió id de deploy"; exit 1; }
+          echo "id=$DEPLOY_ID" >> "$GITHUB_OUTPUT"
+          echo "Sigue el log en vivo: $HUB_URL/system/deploys/$DEPLOY_ID"
+
+      - name: Esperar resultado del deploy
+        run: |
+          ID='${{ steps.launch.outputs.id }}'
+          for i in $(seq 1 120); do
+            sleep 10
+            STATUS=$(curl -fsS -H "Authorization: Bearer ${{ secrets.HUB_DEPLOY_TOKEN }}" \
+              "$HUB_URL/api/deploy/$ID" | jq -r .status)
+            echo "[$((i * 10))s] estado: $STATUS"
+            if [ "$STATUS" = "success" ]; then
+              echo "Deploy completado."
+              exit 0
+            fi
+            if [ "$STATUS" = "error" ]; then
+              echo "::error::El deploy falló — últimas líneas del log del servidor:"
+              curl -fsS -H "Authorization: Bearer ${{ secrets.HUB_DEPLOY_TOKEN }}" \
+                "$HUB_URL/api/deploy/$ID/log" | tail -n 80
+              exit 1
+            fi
+          done
+          echo "::error::Timeout (20 min) esperando al deploy $ID"
+          exit 1

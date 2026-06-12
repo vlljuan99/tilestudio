@@ -74,8 +74,8 @@ export function layout(title, body) {
 <header>
   <h1>⬢ Tilestudio <span style="color:var(--accent)">Hub</span></h1>
   <span class="grow"></span>
-  <nav><a href="/">Clientes</a> &nbsp;·&nbsp; <a href="/settings">DNS y dominio</a>
-  &nbsp;·&nbsp; <a href="/system/build-log">Último build</a></nav>
+  <nav><a href="/">Clientes</a> &nbsp;·&nbsp; <a href="/system/deploys">Deploys</a>
+  &nbsp;·&nbsp; <a href="/settings">Ajustes</a></nav>
   <form method="post" action="/logout" style="margin-left:14px"><button class="ghost">Salir</button></form>
 </header>
 <main>${body}</main>
@@ -130,6 +130,11 @@ export function dashboard({ clients, statuses, sizes, settings, publicHost, noti
         <label>Dominio (vacío = volver a ${esc(c.slug)}.${esc(publicHost)})</label>
         <input name="domain" value="${esc(c.domain || '')}" placeholder="${esc(c.slug)}.es">
         <button style="margin-top:6px">Aplicar dominio</button>
+      </form>
+      <form method="post" action="/clients/${esc(c.slug)}/dbpush" style="margin:8px 0"
+            onsubmit="this.btn.disabled=true;this.btn.textContent='Sincronizando… (~1 min)'">
+        <label>Esquema de BD desincronizado (admin en blanco, errores «column does not exist»)</label>
+        <button name="btn" style="margin-top:6px">Sincronizar esquema de BD</button>
       </form>
       <form method="post" action="/clients/${esc(c.slug)}/delete"
             onsubmit="return this.confirm_slug.value==='${esc(c.slug)}' || (alert('Escribe el slug exacto para confirmar'),false)">
@@ -199,13 +204,13 @@ refreshStatus()
 <div class="card">
 <h2>Sistema</h2>
 <div class="actions">
+  <a class="btn" href="/system/deploys">Historial de deploys</a>
   <form method="post" action="/system/rebuild"
-        onsubmit="return confirm('Reconstruye la imagen con el último código subido y reinicia todas las tiendas. ¿Seguir?')">
-    <button class="ghost">Reconstruir y actualizar todas las tiendas</button>
+        onsubmit="return confirm('Re-despliega con el último código subido (build + esquema de BD + reinicio de tiendas). ¿Seguir?')">
+    <button class="ghost">Re-desplegar último código</button>
   </form>
-  <a class="btn" href="/system/build-log">Ver log del último build</a>
 </div>
-<p class="muted">El código se sube desde tu equipo con <code>deploy\\deploy.ps1</code>; este botón solo reconstruye con lo último subido.</p>
+<p class="muted">El código llega solo al hacer <code>git push</code> a main (GitHub Actions). Manualmente: <code>deploy\\deploy.ps1</code> desde tu equipo.</p>
 </div>`)
 }
 
@@ -234,7 +239,7 @@ export function logsPage(slug, logs) {
 </div>`)
 }
 
-export function settingsPage({ settings, serverIp, notice, error }) {
+export function settingsPage({ settings, serverIp, deployToken, notice, error }) {
   return layout('DNS y dominio', `
 ${notice ? `<div class="notice">${esc(notice)}</div>` : ''}
 ${error ? `<div class="notice error">${esc(error)}</div>` : ''}
@@ -259,6 +264,15 @@ propio todavía. Dominios fuera de tu cuenta: el cliente apunta un registro A a
 ${settings.ionosZoneId ? `<p class="muted" style="margin-top:14px">Zona conectada: <strong>${esc(settings.baseDomain)}</strong> ✓</p>` : ''}
 </div>
 <div class="card">
+<h2>Despliegue automático desde GitHub</h2>
+<p class="muted">Cada <code>git push</code> a <code>main</code> valida el código en GitHub Actions y,
+si pasa, lo despliega aquí solo (build + esquema de BD + reinicio de tiendas). Para activarlo,
+crea este secret en el repo (Settings → Secrets and variables → Actions):</p>
+<p>Nombre: <code class="cred">HUB_DEPLOY_TOKEN</code><br><br>
+Valor: <code class="cred">${esc(deployToken || '(no disponible)')}</code></p>
+<p class="muted">El progreso de cada deploy se ve en <a href="/system/deploys">Deploys</a> y en la pestaña Actions de GitHub.</p>
+</div>
+<div class="card">
 <h2>Cómo crear la API key (una vez)</h2>
 <ol class="muted">
   <li>Entra en <a href="https://developer.hosting.ionos.es" target="_blank">developer.hosting.ionos.es</a> con tu cuenta de IONOS.</li>
@@ -266,6 +280,53 @@ ${settings.ionosZoneId ? `<p class="muted" style="margin-top:14px">Zona conectad
   <li>Te dará un <strong>prefijo público</strong> y un <strong>secreto</strong> (el secreto solo se muestra una vez). Pega aquí los dos juntos con un punto: <code class="cred">prefijo.secreto</code></li>
 </ol>
 </div>`)
+}
+
+const STATUS_LABEL = {
+  running: ['warn', 'En curso…'],
+  success: ['ok', 'OK'],
+  error: ['bad', 'Falló'],
+}
+
+function deployRow(d) {
+  const [cls, label] = STATUS_LABEL[d.status] || ['warn', d.status]
+  const when = new Date(d.startedAt).toLocaleString('es-ES', { timeZone: 'Europe/Madrid' })
+  const dur = d.status === 'running' ? `${d.durationSec}s y subiendo` : `${d.durationSec}s`
+  return `<tr>
+  <td><span class="dot ${cls}"></span>${label}</td>
+  <td><a href="/system/deploys/${esc(d.id)}">${esc(when)}</a></td>
+  <td>${d.commit ? `<code class="cred">${esc(d.commit.slice(0, 9))}</code>` : '<span class="muted">—</span>'}
+      <div class="muted">${esc(d.origin === 'github' ? `push de ${d.actor || 'github'}` : 'manual desde el hub')}</div></td>
+  <td class="muted">${esc(dur)}</td>
+</tr>`
+}
+
+export function deploysPage({ deploys }) {
+  const running = deploys.some((d) => d.status === 'running')
+  return layout('Deploys', `
+<div class="card">
+<h2>Deploys (últimos ${deploys.length}) · <a href="/system/deploys">recargar</a></h2>
+${deploys.length
+    ? `<table><tr><th>Estado</th><th>Fecha</th><th>Commit</th><th>Duración</th></tr>${deploys.map(deployRow).join('')}</table>`
+    : '<p class="muted">Todavía no hay deploys. Haz <code>git push</code> a main o usa «Re-desplegar» en el panel.</p>'}
+</div>
+${running ? '<script>setTimeout(() => location.reload(), 8000)</script>' : ''}`)
+}
+
+export function deployDetailPage({ deploy, log }) {
+  const [cls, label] = STATUS_LABEL[deploy.status] || ['warn', deploy.status]
+  return layout(`Deploy ${deploy.id}`, `
+<div class="card">
+  <h2><span class="dot ${cls}"></span>${label} · deploy de ${esc(new Date(deploy.startedAt).toLocaleString('es-ES', { timeZone: 'Europe/Madrid' }))}
+      · <a href="/system/deploys/${esc(deploy.id)}">recargar</a> · <a href="/system/deploys">historial</a></h2>
+  <p class="muted">
+    ${deploy.commit ? `Commit <code class="cred">${esc(deploy.commit)}</code> · ` : ''}
+    ${esc(deploy.origin === 'github' ? `push a ${deploy.ref || 'main'} de ${deploy.actor || 'github'}` : 'lanzado a mano desde el hub')}
+    · ${deploy.durationSec}s
+  </p>
+  <pre>${esc(log || '(todavía sin salida — el build arranca en unos segundos)')}</pre>
+</div>
+${deploy.status === 'running' ? '<script>setTimeout(() => location.reload(), 6000); window.scrollTo(0, document.body.scrollHeight)</script>' : ''}`)
 }
 
 export function buildLogPage(log) {
