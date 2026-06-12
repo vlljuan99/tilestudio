@@ -1,5 +1,84 @@
-import type { CollectionConfig } from 'payload'
+import type { CollectionConfig, PayloadRequest } from 'payload'
 import { autoSlugFrom } from '../lib/slug'
+
+async function unlinkTileReferences(req: PayloadRequest, id: number | string) {
+  const { payload } = req
+
+  // payload-locked-documents se crea cuando un admin abre un doc para editarlo.
+  // En Postgres tiene una FK al tile ⇒ hay que borrarlo antes del DELETE.
+  const lockedDocs = await payload.find({
+    collection: 'payload-locked-documents',
+    where: { 'document.value': { equals: id }, 'document.relationTo': { equals: 'tiles' } },
+    limit: 200,
+    depth: 0,
+    req,
+  })
+  for (const doc of lockedDocs.docs as any[]) {
+    await payload.delete({ collection: 'payload-locked-documents', id: doc.id, req })
+  }
+
+  // Las simulaciones se conservan como histórico (uso y coste de IA)
+  await payload.update({
+    collection: 'generations',
+    where: { tile: { equals: id } },
+    data: { tile: null },
+    req,
+  })
+
+  // El lead conserva sus datos de contacto, solo pierde el enlace
+  await payload.update({
+    collection: 'leads',
+    where: { tileOfInterest: { equals: id } },
+    data: { tileOfInterest: null },
+    req,
+  })
+
+  // Quitar el azulejo de los ambientes que lo usaban
+  const ambients = await payload.find({
+    collection: 'ambients',
+    where: { 'tilesUsed.tile': { equals: id } },
+    limit: 200,
+    depth: 0,
+    req,
+  })
+  for (const ambient of ambients.docs as any[]) {
+    await payload.update({
+      collection: 'ambients',
+      id: ambient.id,
+      data: {
+        tilesUsed: (ambient.tilesUsed || []).filter((item: any) => {
+          const tileId = typeof item.tile === 'object' ? item.tile?.id : item.tile
+          return String(tileId) !== String(id)
+        }),
+      },
+      req,
+    })
+  }
+
+  // El historial de catálogos importados conserva la importación, pero
+  // pierde el enlace al azulejo borrado. Si no, el FK del rels-table de
+  // `pdf-imports.createdTiles` también rompe el delete en Postgres.
+  const pdfImports = await payload.find({
+    collection: 'pdf-imports',
+    where: { createdTiles: { equals: id } },
+    limit: 200,
+    depth: 0,
+    req,
+  })
+  for (const pdfImport of pdfImports.docs as any[]) {
+    await payload.update({
+      collection: 'pdf-imports',
+      id: pdfImport.id,
+      data: {
+        createdTiles: (pdfImport.createdTiles || []).filter((tile: any) => {
+          const tileId = typeof tile === 'object' ? tile?.id : tile
+          return String(tileId) !== String(id)
+        }),
+      },
+      req,
+    })
+  }
+}
 
 export const Tiles: CollectionConfig = {
   slug: 'tiles',
@@ -26,69 +105,18 @@ export const Tiles: CollectionConfig = {
     // producción. Este hook desenlaza todo dentro de la misma transacción.
     beforeDelete: [
       async ({ req, id }) => {
-        const { payload } = req
-
-        // Las simulaciones se conservan como histórico (uso y coste de IA)
-        await payload.update({
-          collection: 'generations',
-          where: { tile: { equals: id } },
-          data: { tile: null },
-          req,
-        })
-
-        // El lead conserva sus datos de contacto, solo pierde el enlace
-        await payload.update({
-          collection: 'leads',
-          where: { tileOfInterest: { equals: id } },
-          data: { tileOfInterest: null },
-          req,
-        })
-
-        // Quitar el azulejo de los ambientes que lo usaban
-        const ambients = await payload.find({
-          collection: 'ambients',
-          where: { 'tilesUsed.tile': { equals: id } },
-          limit: 200,
-          depth: 0,
-          req,
-        })
-        for (const ambient of ambients.docs as any[]) {
-          await payload.update({
-            collection: 'ambients',
-            id: ambient.id,
-            data: {
-              tilesUsed: (ambient.tilesUsed || []).filter((item: any) => {
-                const tileId = typeof item.tile === 'object' ? item.tile?.id : item.tile
-                return String(tileId) !== String(id)
-              }),
-            },
-            req,
-          })
-        }
-
-        // El historial de catálogos importados conserva la importación, pero
-        // pierde el enlace al azulejo borrado. Si no, el FK del rels-table de
-        // `pdf-imports.createdTiles` también rompe el delete en Postgres.
-        const pdfImports = await payload.find({
-          collection: 'pdf-imports',
-          where: { createdTiles: { equals: id } },
-          limit: 200,
-          depth: 0,
-          req,
-        })
-        for (const pdfImport of pdfImports.docs as any[]) {
-          await payload.update({
-            collection: 'pdf-imports',
-            id: pdfImport.id,
-            data: {
-              createdTiles: (pdfImport.createdTiles || []).filter((tile: any) => {
-                const tileId = typeof tile === 'object' ? tile?.id : tile
-                return String(tileId) !== String(id)
-              }),
-            },
-            req,
-          })
-        }
+        // Payload corre los beforeDelete del bulk delete en paralelo
+        // (Promise.all). Si dos azulejos comparten padre (un pdf-import o un
+        // ambient), ambos hooks leen el mismo array a la vez, filtran solo
+        // su id y se pisan al escribir — último escritor gana, y los otros
+        // tiles siguen referenciados ⇒ el DELETE final revienta por FK.
+        // Encadenamos las invocaciones a través de req.context para que
+        // corran en serie aunque Payload las dispare a la vez.
+        const ctx = req.context as Record<string, unknown>
+        const prev = (ctx._tilesBeforeDeleteChain as Promise<void> | undefined) ?? Promise.resolve()
+        const myTurn = prev.then(() => unlinkTileReferences(req, id))
+        ctx._tilesBeforeDeleteChain = myTurn.catch(() => {})
+        await myTurn
       },
     ],
   },
