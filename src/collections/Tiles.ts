@@ -65,6 +65,30 @@ export const Tiles: CollectionConfig = {
             req,
           })
         }
+
+        // El historial de catálogos importados conserva la importación, pero
+        // pierde el enlace al azulejo borrado. Si no, el FK del rels-table de
+        // `pdf-imports.createdTiles` también rompe el delete en Postgres.
+        const pdfImports = await payload.find({
+          collection: 'pdf-imports',
+          where: { createdTiles: { equals: id } },
+          limit: 200,
+          depth: 0,
+          req,
+        })
+        for (const pdfImport of pdfImports.docs as any[]) {
+          await payload.update({
+            collection: 'pdf-imports',
+            id: pdfImport.id,
+            data: {
+              createdTiles: (pdfImport.createdTiles || []).filter((tile: any) => {
+                const tileId = typeof tile === 'object' ? tile?.id : tile
+                return String(tileId) !== String(id)
+              }),
+            },
+            req,
+          })
+        }
       },
     ],
   },
