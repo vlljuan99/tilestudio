@@ -144,7 +144,7 @@ export const PdfImports: CollectionConfig = {
       fields: [
         {
           name: 'totalPages',
-          label: 'Total páginas',
+          label: 'Páginas a procesar',
           type: 'number',
           admin: { readOnly: true },
         },

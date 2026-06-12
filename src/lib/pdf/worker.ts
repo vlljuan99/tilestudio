@@ -16,7 +16,7 @@
  * Por defecto Gemini 2.5 Flash (GOOGLE_API_KEY). Fallback a gpt-4o-mini (OPENAI_API_KEY).
  * Forzar con AI_VISION_PROVIDER=gemini|openai.
  */
-import { getPayload } from 'payload'
+import { getPayload, type Payload } from 'payload'
 import sharp from 'sharp'
 import config from '@payload-config'
 import { loadPdf, iteratePages, getTotalPages, extractEmbeddedImages, type EmbeddedImage } from './extractor'
@@ -167,9 +167,39 @@ export type Candidate = {
   pageImageUrl?: string
   pageMediaId?: number | string
   reviewStatus: 'pending' | 'accepted' | 'rejected'
+  /** Tile ya creado a partir de este candidato — evita duplicados si se publica varias veces. */
+  publishedTileId?: number | string | null
 }
 
 type BBox = [number, number, number, number]
+
+/**
+ * Conserva las decisiones de revisión tomadas MIENTRAS el worker corre.
+ * El admin puede aceptar/rechazar candidatos en /review antes de que la
+ * extracción termine, y como el worker escribe extractedItems entero en cada
+ * página, sin este merge esas decisiones se perderían en la siguiente escritura.
+ */
+export async function mergeReviewStatuses(
+  payload: Payload,
+  importId: number | string,
+  candidates: Candidate[],
+): Promise<void> {
+  try {
+    const current = await payload.findByID({ collection: 'pdf-imports', id: importId, depth: 0 })
+    const stored: Candidate[] = ((current as any).extractedItems || []) as Candidate[]
+    const byId = new Map(stored.map((c) => [c.id, c]))
+    for (const cand of candidates) {
+      const storedCand = byId.get(cand.id)
+      if (!storedCand) continue
+      if (storedCand.reviewStatus && storedCand.reviewStatus !== 'pending') {
+        cand.reviewStatus = storedCand.reviewStatus
+      }
+      if (storedCand.publishedTileId != null) cand.publishedTileId = storedCand.publishedTileId
+    }
+  } catch {
+    // Si falla la lectura seguimos sin merge: peor perder una decisión que parar el worker
+  }
+}
 
 function makeCandidateId(page: number, idx: number): string {
   return `p${page}_${idx}_${Math.random().toString(36).slice(2, 8)}`
@@ -413,8 +443,11 @@ export async function runPdfImport(importId: number | string) {
       collection: 'pdf-imports',
       id: importId,
       data: {
-        totalPages,
-        currentStep: `Procesando páginas ${fromPage}–${effectiveTo} (${pagesToProcess})…`,
+        // Guardamos las páginas A PROCESAR (no las del PDF entero): es el
+        // denominador del progreso que muestra el admin — con un rango
+        // parcial, "Página 10 de 27 · 67%" no cuadraba.
+        totalPages: pagesToProcess,
+        currentStep: `Procesando páginas ${fromPage}–${effectiveTo} (${pagesToProcess} de ${totalPages} del PDF)…`,
       } as any,
     })
 
@@ -650,6 +683,7 @@ export async function runPdfImport(importId: number | string) {
           }
         }
 
+        await mergeReviewStatuses(payload, importId, allCandidates)
         await payload.update({
           collection: 'pdf-imports',
           id: importId,

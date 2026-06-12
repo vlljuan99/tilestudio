@@ -29,6 +29,8 @@ type Candidate = {
   textureMediaId?: number | string
   textureSource?: 'embedded' | 'crop'
   reviewStatus: 'pending' | 'accepted' | 'rejected'
+  /** Tile ya creado a partir de este candidato — evita duplicados al republicar. */
+  publishedTileId?: number | string | null
 }
 
 function slugify(s: string): string {
@@ -96,16 +98,27 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   const candidates: Candidate[] = importDoc.extractedItems || []
-  const accepted = candidates.filter((c) => c.reviewStatus === 'accepted')
+  // Los que ya tienen tile creado se saltan: permite publicar varias veces
+  // (p. ej. a mitad de extracción y otra vez al final) sin duplicar azulejos.
+  const accepted = candidates.filter((c) => c.reviewStatus === 'accepted' && c.publishedTileId == null)
 
   if (accepted.length === 0) {
-    return NextResponse.json({ error: 'No hay candidatos aceptados.' }, { status: 400 })
+    return NextResponse.json(
+      { error: 'No hay candidatos aceptados pendientes de publicar.' },
+      { status: 400 },
+    )
   }
 
+  // Si el worker sigue leyendo el PDF, no pisamos su estado: se puede publicar
+  // a mitad de extracción y el progreso debe seguir mostrándose como "leyendo".
+  const workerRunning = importDoc.status === 'processing'
   await payload.update({
     collection: 'pdf-imports',
     id,
-    data: { status: 'importing', currentStep: `Publicando ${accepted.length} azulejos…` } as any,
+    data: {
+      ...(workerRunning ? {} : { status: 'importing' }),
+      currentStep: `Publicando ${accepted.length} azulejos…`,
+    } as any,
   })
 
   // Marca: usar la del import si está, si no la detectada en candidatos
@@ -287,14 +300,37 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
   }
 
+  // Releemos el doc: el worker puede haber terminado (o añadido candidatos
+  // nuevos) mientras publicábamos. Solo cerramos el import como "completed"
+  // si ya no procesa; si sigue, dejará 'review_ready' al acabar y se podrá
+  // publicar el resto sin duplicar (por eso marcamos publishedTileId).
+  let stillProcessing = workerRunning
+  let latestItems: Candidate[] = candidates
+  try {
+    const fresh = await payload.findByID({ collection: 'pdf-imports', id, depth: 0 })
+    stillProcessing = (fresh as any).status === 'processing'
+    latestItems = ((fresh as any).extractedItems || []) as Candidate[]
+  } catch {}
+
+  const publishedByCandidate = new Map(createdPairs.map((p) => [p.candidate.id, p.tileId]))
+  for (const item of latestItems) {
+    const tileId = publishedByCandidate.get(item.id)
+    if (tileId != null) item.publishedTileId = tileId
+  }
+
   await payload.update({
     collection: 'pdf-imports',
     id,
     data: {
-      status: 'completed',
-      currentStep: `Publicados ${createdTileIds.length} azulejos y ${createdAmbients} ambientes. ${errors.length} avisos.`,
-      createdTiles: createdTileIds,
-      completedAt: new Date().toISOString(),
+      ...(stillProcessing ? {} : { status: 'completed', completedAt: new Date().toISOString() }),
+      currentStep: `Publicados ${createdTileIds.length} azulejos y ${createdAmbients} ambientes. ${errors.length} avisos.${stillProcessing ? ' La lectura del PDF sigue en marcha…' : ''}`,
+      // Acumulamos sobre publicaciones anteriores (publicar dos veces no debe
+      // borrar el vínculo con los tiles de la primera tanda)
+      createdTiles: [
+        ...(importDoc.createdTiles || []).map((t: any) => (typeof t === 'object' ? t.id : t)),
+        ...createdTileIds,
+      ],
+      extractedItems: latestItems,
       errorMessage: errors.length > 0 ? errors.join('\n') : undefined,
     } as any,
   })
