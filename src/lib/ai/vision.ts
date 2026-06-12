@@ -89,7 +89,7 @@ REGLAS DE VERACIDAD (CRÍTICO — prohibido inventar):
 
 REGLAS DE COORDENADAS (CRÍTICO):
 - Coordenadas normalizadas 0-1 sobre la imagen completa: x1,y1 esquina superior izquierda; x2,y2 inferior derecha.
-- "ambientBbox": SOLO una fotografía de ESTANCIA REAL (espacio con perspectiva: suelo/pared, muebles, plantas, luz natural). Un primer plano de la textura NO es ambiente. Si no hay, null.
+- "ambientBbox": SOLO una fotografía de ESTANCIA REAL con MUEBLES o PERSONAS visible (salón, cocina, baño, dormitorio, terraza, local comercial…). El espacio debe tener perspectiva tridimensional: suelo/pared/techo y al menos un elemento de mobiliario, decoración o persona. NUNCA es ambient: una ficha técnica, una paleta de colores, una cuadrícula de swatches/muestras, un primer plano de textura, una página de especificaciones con tablas, una variación gráfica, una imagen de producto sobre fondo blanco, o cualquier composición plana sin profundidad espacial. Si no hay foto de estancia con muebles, devuelve null.
 - "ambientProducts": si la foto ambiente tiene callouts o etiquetas con nombres de producto (ej. "CŌRE MIX TAUPE 120X280"), lista los nombres SIN el formato: ["Cōre Mix Taupe"]. Si no hay callouts, [].
 - Un producto que SOLO aparece como callout de la foto ambiente va en "ambientProducts", NUNCA en "products" (no tiene swatch propio en esta página; su ficha saldrá en otra).
 - "textureBbox" (por variante): rectángulo de la textura/swatch de ESA variante (sin el rótulo, sin marco). Cada variante tiene un rectángulo distinto. En páginas "texture", la mitad/zona completa que ocupa esa textura. Si no la localizas con seguridad, null.

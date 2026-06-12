@@ -554,11 +554,14 @@ export async function runPdfImport(importId: number | string) {
         for (const img of candidateMatches.values()) usedEmbedded.add(img)
 
         // 5. Ambient: solo si hay con quién enlazarlo (productos en esta página
-        //    o callouts que nombran variantes de otras). El LLM solo da
-        //    ambientBbox para fotos de estancia real, no texturas.
+        //    o callouts que nombran variantes de otras). Solo en páginas que
+        //    por definición contienen fotos de estancia (ambient / intro).
+        //    Las fichas técnicas, paletas y texturas NUNCA tienen ambient real.
+        const AMBIENT_PAGE_TYPES = new Set(['ambient', 'intro'])
         let sharedAmbient: { id: number | string; url: string } | undefined
         if (
           result.ambientBbox &&
+          AMBIENT_PAGE_TYPES.has(result.pageType || '') &&
           (products.length > 0 || ambientProductNames.length > 0)
         ) {
           const ambientPool = ambientCandidates.length > 0 ? ambientCandidates : allEmbedded
