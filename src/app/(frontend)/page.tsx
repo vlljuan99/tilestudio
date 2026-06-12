@@ -4,6 +4,7 @@ import { getPayload } from 'payload'
 import config from '@payload-config'
 
 import { Button } from '@/components/ui/button'
+import { BeforeAfterSlider } from '@/components/site/BeforeAfterSlider'
 import { Sparkles, Camera, Wand2, MessageCircle } from 'lucide-react'
 
 async function getFeaturedTiles() {
@@ -36,12 +37,25 @@ export default async function HomePage() {
     settings?.heroSubtitle ||
     'Sube una foto de tu estancia, elige el azulejo que te gusta y deja que la IA te muestre cómo quedaría. Sin compromiso.'
 
+  const heroBeforeImage = (settings as any)?.heroBeforeImage?.url as string | undefined
+  const heroAfterImage = (settings as any)?.heroAfterImage?.url as string | undefined
+
   return (
     <div>
       {/* HERO */}
       <section className="relative overflow-hidden">
-        <div className="container py-16 md:py-28 grid md:grid-cols-2 gap-12 items-center">
-          <div className="space-y-6">
+        <div className="container py-8 md:py-28 flex flex-col md:grid md:grid-cols-2 gap-8 md:gap-12 items-center">
+          {/* Slider – first on mobile for visual impact */}
+          <div className="w-full order-1 md:order-2 -mx-4 px-0 md:mx-0 md:px-0">
+            <BeforeAfterSlider
+              beforeSrc={heroBeforeImage}
+              afterSrc={heroAfterImage}
+              className="w-full aspect-[4/3] md:aspect-[4/3]"
+            />
+          </div>
+
+          {/* Text */}
+          <div className="space-y-6 order-2 md:order-1">
             <span className="inline-flex items-center gap-2 rounded-full bg-accent/10 text-accent px-3 py-1 text-xs font-medium">
               <Sparkles className="h-3.5 w-3.5" /> Simulación con IA
             </span>
@@ -56,16 +70,6 @@ export default async function HomePage() {
               <Button asChild size="lg" variant="outline">
                 <Link href="/catalogo">Ver catálogo</Link>
               </Button>
-            </div>
-          </div>
-          <div className="aspect-[4/3] rounded-xl bg-muted relative overflow-hidden">
-            <div className="absolute inset-0 grid grid-cols-2">
-              <div className="border-r border-background flex items-end p-4">
-                <span className="text-xs uppercase tracking-wider text-muted-foreground bg-background/80 px-2 py-1 rounded">Antes</span>
-              </div>
-              <div className="bg-primary/10 flex items-end p-4">
-                <span className="text-xs uppercase tracking-wider text-primary bg-background/80 px-2 py-1 rounded">Con IA</span>
-              </div>
             </div>
           </div>
         </div>

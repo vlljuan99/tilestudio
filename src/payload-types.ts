@@ -1091,6 +1091,14 @@ export interface SiteSetting {
   heroTitle?: string | null;
   heroSubtitle?: string | null;
   heroImage?: (number | null) | Media;
+  /**
+   * Foto de la estancia sin azulejo (lado izquierdo del deslizador).
+   */
+  heroBeforeImage?: (number | null) | Media;
+  /**
+   * Foto con azulejo aplicado por IA (lado derecho del deslizador).
+   */
+  heroAfterImage?: (number | null) | Media;
   aboutShort?: string | null;
   /**
    * Botones, enlaces, acentos importantes.
@@ -1156,6 +1164,8 @@ export interface SiteSettingsSelect<T extends boolean = true> {
   heroTitle?: T;
   heroSubtitle?: T;
   heroImage?: T;
+  heroBeforeImage?: T;
+  heroAfterImage?: T;
   aboutShort?: T;
   colorPrimary?: T;
   colorAccent?: T;

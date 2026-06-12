@@ -69,6 +69,24 @@ export const SiteSettings: GlobalConfig = {
               relationTo: 'media',
             },
             {
+              name: 'heroBeforeImage',
+              label: 'Comparador hero – Imagen ANTES',
+              type: 'upload',
+              relationTo: 'media',
+              admin: {
+                description: 'Foto de la estancia sin azulejo (lado izquierdo del deslizador).',
+              },
+            },
+            {
+              name: 'heroAfterImage',
+              label: 'Comparador hero – Imagen CON IA',
+              type: 'upload',
+              relationTo: 'media',
+              admin: {
+                description: 'Foto con azulejo aplicado por IA (lado derecho del deslizador).',
+              },
+            },
+            {
               name: 'aboutShort',
               label: 'Sobre nosotros (resumen)',
               type: 'textarea',
