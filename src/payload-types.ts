@@ -479,7 +479,7 @@ export interface SimulatorSession {
 export interface Generation {
   id: number;
   session: number | SimulatorSession;
-  tile: number | Tile;
+  tile?: (number | null) | Tile;
   surfaces: ('floor' | 'wall')[];
   /**
    * Si se cambia el color de la pared no cubierta por azulejos.

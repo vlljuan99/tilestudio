@@ -30,7 +30,9 @@ export const Generations: CollectionConfig = {
       label: 'Azulejo',
       type: 'relationship',
       relationTo: 'tiles',
-      required: true,
+      // Opcional: si el azulejo se borra del catálogo, la simulación se
+      // conserva (histórico de uso y coste) con el azulejo desenlazado.
+      required: false,
     },
     {
       name: 'surfaces',

@@ -18,6 +18,56 @@ export const Tiles: CollectionConfig = {
       return { published: { equals: true } }
     },
   },
+  hooks: {
+    // En Postgres las referencias a un azulejo (generaciones, leads, ambientes)
+    // son foreign keys sin cascade: borrar el azulejo sin desenlazarlas antes
+    // revienta con un 500 ("violates foreign key constraint"). En el SQLite de
+    // desarrollo las FKs no se aplican, así que el fallo solo se ve en
+    // producción. Este hook desenlaza todo dentro de la misma transacción.
+    beforeDelete: [
+      async ({ req, id }) => {
+        const { payload } = req
+
+        // Las simulaciones se conservan como histórico (uso y coste de IA)
+        await payload.update({
+          collection: 'generations',
+          where: { tile: { equals: id } },
+          data: { tile: null },
+          req,
+        })
+
+        // El lead conserva sus datos de contacto, solo pierde el enlace
+        await payload.update({
+          collection: 'leads',
+          where: { tileOfInterest: { equals: id } },
+          data: { tileOfInterest: null },
+          req,
+        })
+
+        // Quitar el azulejo de los ambientes que lo usaban
+        const ambients = await payload.find({
+          collection: 'ambients',
+          where: { 'tilesUsed.tile': { equals: id } },
+          limit: 200,
+          depth: 0,
+          req,
+        })
+        for (const ambient of ambients.docs as any[]) {
+          await payload.update({
+            collection: 'ambients',
+            id: ambient.id,
+            data: {
+              tilesUsed: (ambient.tilesUsed || []).filter((item: any) => {
+                const tileId = typeof item.tile === 'object' ? item.tile?.id : item.tile
+                return String(tileId) !== String(id)
+              }),
+            },
+            req,
+          })
+        }
+      },
+    ],
+  },
   fields: [
     {
       type: 'tabs',
