@@ -23,12 +23,11 @@ fi
 # Sincroniza el esquema de Postgres de CADA cliente con la imagen nueva.
 # Sin esto, un campo nuevo en una colección rompe el admin en producción
 # (Payload solo hace push de esquema en dev). Si no hay cambios, es un no-op.
-for d in clients/*/; do
-  slug=$(basename "$d")
-  if [[ -f "$d/compose.yml" ]]; then
-    echo "== Sincronizando esquema de BD: $slug =="
-    docker compose run --rm --no-deps "app-$slug" npm run db:push
-  fi
+# Los servicios registrados en compose son la fuente de verdad (en clients/
+# quedan directorios _deleted-* de bajas que ya no tienen servicio).
+for svc in $(docker compose config --services | grep '^app-' || true); do
+  echo "== Sincronizando esquema de BD: ${svc#app-} =="
+  docker compose run --rm --no-deps "$svc" npm run db:push
 done
 
 # `up -d` recrea solo los contenedores cuya imagen ha cambiado
