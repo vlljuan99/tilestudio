@@ -555,6 +555,18 @@ export interface PdfImport {
     | number
     | boolean
     | null;
+  /**
+   * Tokens y coste estimado (USD) por proveedor de visión en esta importación. Se actualiza en vivo.
+   */
+  aiUsage?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
   errorMessage?: string | null;
   startedAt?: string | null;
   completedAt?: string | null;
@@ -928,6 +940,7 @@ export interface PdfImportsSelect<T extends boolean = true> {
   currentStep?: T;
   candidatesCount?: T;
   extractedItems?: T;
+  aiUsage?: T;
   errorMessage?: T;
   startedAt?: T;
   completedAt?: T;
