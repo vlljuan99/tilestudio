@@ -185,6 +185,16 @@ export const PdfImports: CollectionConfig = {
       },
     },
     {
+      name: 'aiUsage',
+      label: 'Consumo de IA',
+      type: 'json',
+      admin: {
+        readOnly: true,
+        description:
+          'Tokens y coste estimado (USD) por proveedor de visión en esta importación. Se actualiza en vivo.',
+      },
+    },
+    {
       name: 'errorMessage',
       label: 'Error',
       type: 'textarea',

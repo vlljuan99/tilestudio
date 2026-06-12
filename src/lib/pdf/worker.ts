@@ -20,7 +20,15 @@ import { getPayload } from 'payload'
 import sharp from 'sharp'
 import config from '@payload-config'
 import { loadPdf, iteratePages, getTotalPages, extractEmbeddedImages, type EmbeddedImage } from './extractor'
-import { getVisionExtractor, type ExtractionResult } from '../ai/vision'
+import { getVisionExtractor, type ExtractionResult, type UsageStats } from '../ai/vision'
+
+/** "1.234k tokens ≈ $0.42" — resumen del consumo de visión para el admin. */
+function formatUsage(usage: UsageStats[]): string {
+  if (usage.length === 0) return ''
+  const totalToks = usage.reduce((s, u) => s + u.inputTokens + u.outputTokens, 0)
+  const totalCost = usage.reduce((s, u) => s + u.estimatedCostUsd, 0)
+  return `IA: ${Math.round(totalToks / 1000)}k tokens ≈ ${totalCost.toFixed(2)} $`
+}
 
 // =============================================================================
 // Matching de imágenes embebidas a candidatos
@@ -648,6 +656,7 @@ export async function runPdfImport(importId: number | string) {
           data: {
             extractedItems: allCandidates,
             candidatesCount: allCandidates.length,
+            aiUsage: extractor.getUsage(),
             currentStep: `Página ${page.pageNumber}: ${addedCount} candidatos nuevos${mergedCount > 0 ? `, ${mergedCount} fusionados` : ''}`,
           } as any,
         })
@@ -665,6 +674,8 @@ export async function runPdfImport(importId: number | string) {
 
     await doc.destroy()
 
+    const usage = extractor.getUsage()
+    const usageSummary = formatUsage(usage)
     await payload.update({
       collection: 'pdf-imports',
       id: importId,
@@ -672,7 +683,8 @@ export async function runPdfImport(importId: number | string) {
         status: 'review_ready',
         completedAt: new Date().toISOString(),
         progressPercent: 100,
-        currentStep: `Listo. ${allCandidates.length} candidatos a revisar.`,
+        aiUsage: usage,
+        currentStep: `Listo. ${allCandidates.length} candidatos a revisar.${usageSummary ? ` ${usageSummary}` : ''}`,
       } as any,
     })
   } catch (err) {

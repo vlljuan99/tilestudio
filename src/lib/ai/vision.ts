@@ -120,21 +120,45 @@ Devuelve JSON estricto con esta forma:
 
 // -- Interfaz ----------------------------------------------------------------
 
+/** Consumo acumulado de un proveedor durante una extracción. */
+export type UsageStats = {
+  provider: string
+  calls: number
+  inputTokens: number
+  outputTokens: number
+  /** Estimación en USD según tarifas hardcodeadas (orientativo). */
+  estimatedCostUsd: number
+}
+
+// Tarifas por millón de tokens (junio 2026, orientativas — revisar si cambian).
+const PRICING_PER_MTOK: Record<string, { input: number; output: number }> = {
+  'gemini-2.5-flash': { input: 0.3, output: 2.5 },
+  'gpt-4o-mini': { input: 0.15, output: 0.6 },
+}
+
+function estimateCostUsd(model: string, inputTokens: number, outputTokens: number): number {
+  const p = PRICING_PER_MTOK[model]
+  if (!p) return 0
+  return (inputTokens * p.input + outputTokens * p.output) / 1_000_000
+}
+
 export interface VisionExtractor {
   readonly id: string
   extract(imageBase64: string, pageText: string): Promise<ExtractionResult>
+  /** Consumo acumulado desde la creación del extractor (uno por proveedor). */
+  getUsage(): UsageStats[]
 }
 
 // -- Retry helper --------------------------------------------------------------
 
 /**
  * Reintenta `fn` ante errores transitorios de API (429/431/5xx/UNAVAILABLE).
- * Backoff exponencial: 2s, 6s, 18s. Hasta 4 intentos en total — los picos de
- * "high demand" de Gemini suelen durar más que un par de segundos.
+ * Backoff exponencial: 2s, 6s, 18s. `attempts` configurable: cuando hay un
+ * proveedor de respaldo, el primario reintenta menos (2) y cede antes.
  */
-async function withRetry<T>(label: string, fn: () => Promise<T>): Promise<T> {
+async function withRetry<T>(label: string, fn: () => Promise<T>, attempts = 4): Promise<T> {
   let lastErr: unknown
-  for (let attempt = 0; attempt < 4; attempt++) {
+  for (let attempt = 0; attempt < attempts; attempt++) {
     if (attempt > 0) {
       const wait = 2000 * Math.pow(3, attempt - 1)
       await new Promise((r) => setTimeout(r, wait))
@@ -153,7 +177,9 @@ async function withRetry<T>(label: string, fn: () => Promise<T>): Promise<T> {
         msg.includes('fetch failed') ||
         /tim(ed)?\s?out|abort/i.test(msg)
       if (!retriable) throw err
-      console.warn(`[${label}] Retry ${attempt + 1}/4 tras error transitorio: ${msg.slice(0, 120)}`)
+      console.warn(
+        `[${label}] Retry ${attempt + 1}/${attempts} tras error transitorio: ${msg.slice(0, 120)}`,
+      )
     }
   }
   throw lastErr
@@ -172,6 +198,11 @@ export class FallbackVisionExtractor implements VisionExtractor {
     private fallback: VisionExtractor,
   ) {
     this.id = `${primary.id} (fallback: ${fallback.id})`
+  }
+
+  getUsage(): UsageStats[] {
+    // Solo proveedores que realmente se usaron.
+    return [...this.primary.getUsage(), ...this.fallback.getUsage()].filter((u) => u.calls > 0)
   }
 
   async extract(imageBase64: string, pageText: string): Promise<ExtractionResult> {
@@ -194,13 +225,30 @@ export class OpenAIVisionExtractor implements VisionExtractor {
   readonly id: string
   private client: OpenAI
   private model: string
+  private attempts: number
+  private calls = 0
+  private inputTokens = 0
+  private outputTokens = 0
 
-  constructor(apiKey: string, model = 'gpt-4o-mini') {
+  constructor(apiKey: string, model = 'gpt-4o-mini', attempts = 4) {
     // timeout duro: una request colgada no puede parar el worker entero.
     // maxRetries 0 — los reintentos los gestiona withRetry.
     this.client = new OpenAI({ apiKey, timeout: 90_000, maxRetries: 0 })
     this.model = model
+    this.attempts = attempts
     this.id = `openai:${model}`
+  }
+
+  getUsage(): UsageStats[] {
+    return [
+      {
+        provider: this.id,
+        calls: this.calls,
+        inputTokens: this.inputTokens,
+        outputTokens: this.outputTokens,
+        estimatedCostUsd: estimateCostUsd(this.model, this.inputTokens, this.outputTokens),
+      },
+    ]
   }
 
   async extract(imageBase64: string, pageText: string): Promise<ExtractionResult> {
@@ -225,7 +273,12 @@ export class OpenAIVisionExtractor implements VisionExtractor {
           },
         ],
       }),
+      this.attempts,
     )
+
+    this.calls++
+    this.inputTokens += response.usage?.prompt_tokens || 0
+    this.outputTokens += response.usage?.completion_tokens || 0
 
     const content = response.choices[0]?.message?.content
     if (!content) return { products: [] }
@@ -246,13 +299,30 @@ export class GeminiVisionExtractor implements VisionExtractor {
   readonly id: string
   private client: GoogleGenAI
   private model: string
+  private attempts: number
+  private calls = 0
+  private inputTokens = 0
+  private outputTokens = 0
 
-  constructor(apiKey: string, model = 'gemini-2.5-flash') {
+  constructor(apiKey: string, model = 'gemini-2.5-flash', attempts = 4) {
     // timeout duro: sin él, una conexión estancada tras un pico de 503s deja
     // el worker colgado para siempre en mitad de una página.
     this.client = new GoogleGenAI({ apiKey, httpOptions: { timeout: 90_000 } })
     this.model = model
+    this.attempts = attempts
     this.id = `gemini:${model}`
+  }
+
+  getUsage(): UsageStats[] {
+    return [
+      {
+        provider: this.id,
+        calls: this.calls,
+        inputTokens: this.inputTokens,
+        outputTokens: this.outputTokens,
+        estimatedCostUsd: estimateCostUsd(this.model, this.inputTokens, this.outputTokens),
+      },
+    ]
   }
 
   async extract(imageBase64: string, pageText: string): Promise<ExtractionResult> {
@@ -284,7 +354,14 @@ export class GeminiVisionExtractor implements VisionExtractor {
           },
         },
       }),
+      this.attempts,
     )
+
+    this.calls++
+    const meta = result.usageMetadata
+    this.inputTokens += meta?.promptTokenCount || 0
+    // El "thinking" se factura como salida.
+    this.outputTokens += (meta?.candidatesTokenCount || 0) + (meta?.thoughtsTokenCount || 0)
 
     const text = result.text
     if (!text) return { products: [] }
@@ -316,23 +393,23 @@ export function getVisionExtractor(): VisionExtractor {
 
   if (forcedProvider === 'openai') {
     if (!oKey) throw new Error('Falta OPENAI_API_KEY (AI_VISION_PROVIDER=openai)')
-    const primary = new OpenAIVisionExtractor(oKey, process.env.AI_VISION_MODEL || 'gpt-4o-mini')
     if (fallbackEnabled && gKey) {
+      // Con respaldo disponible, el primario cede tras 2 intentos.
+      const primary = new OpenAIVisionExtractor(oKey, process.env.AI_VISION_MODEL || 'gpt-4o-mini', 2)
       return new FallbackVisionExtractor(primary, new GeminiVisionExtractor(gKey))
     }
-    return primary
+    return new OpenAIVisionExtractor(oKey, process.env.AI_VISION_MODEL || 'gpt-4o-mini')
   }
 
   if (forcedProvider === 'gemini' || !forcedProvider) {
     if (gKey) {
-      const primary = new GeminiVisionExtractor(
-        gKey,
-        process.env.AI_VISION_MODEL || 'gemini-2.5-flash',
-      )
+      const model = process.env.AI_VISION_MODEL || 'gemini-2.5-flash'
       if (fallbackEnabled && oKey) {
+        // Con respaldo disponible, el primario cede tras 2 intentos.
+        const primary = new GeminiVisionExtractor(gKey, model, 2)
         return new FallbackVisionExtractor(primary, new OpenAIVisionExtractor(oKey))
       }
-      return primary
+      return new GeminiVisionExtractor(gKey, model)
     }
     // Auto-fallback a OpenAI si no hay GOOGLE_API_KEY
     if (oKey) {
