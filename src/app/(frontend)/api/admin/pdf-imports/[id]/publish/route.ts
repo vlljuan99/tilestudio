@@ -17,6 +17,7 @@ type Candidate = {
   colorCode?: string | null
   formats?: string[]
   finishes?: string[]
+  specialPieces?: string[]
   dominantColor?: string | null
   description?: string | null
   usage?: string[]
@@ -25,6 +26,8 @@ type Candidate = {
   pageMediaId?: number | string
   ambientImageUrl?: string
   ambientMediaId?: number | string
+  ambientImageUrls?: string[]
+  ambientMediaIds?: (number | string)[]
   textureImageUrl?: string
   textureMediaId?: number | string
   textureSource?: 'embedded' | 'crop'
@@ -173,7 +176,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       //   mainImage  = foto de ambiente (compartida por todas las variantes de la página)
       //   textureImage = recorte de la textura específica de esta variante
       // Si alguna falta, usamos la página entera como fallback razonable.
-      const ambientId = c.ambientMediaId ?? c.pageMediaId ?? null
+      // Una variante puede aparecer en varios entornos: el primero es la imagen
+      // principal; todos se enlazan como Ambients más abajo.
+      const ambientIds =
+        c.ambientMediaIds && c.ambientMediaIds.length
+          ? c.ambientMediaIds
+          : c.ambientMediaId != null
+            ? [c.ambientMediaId]
+            : []
+      const ambientId = ambientIds[0] ?? c.pageMediaId ?? null
       const textureId = c.textureMediaId ?? c.pageMediaId ?? null
 
       if (!ambientId && !textureId) {
@@ -204,6 +215,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       const attributes: Record<string, unknown> = {}
       if ((c.formats?.length || 0) > 1) attributes.formats = c.formats
       if ((c.finishes?.length || 0) > 1) attributes.finishes = c.finishes
+      if ((c.specialPieces?.length || 0) > 0) attributes.specialPieces = c.specialPieces
       if (c.colorCode) attributes.colorCode = c.colorCode
       if (c.seriesName) attributes.series = c.seriesName
 
@@ -241,17 +253,25 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   // azulejos → un Ambiente con todos ellos en tilesUsed. Solo fotos de
   // ambiente reales (ambientMediaId), nunca el render de página.
   let createdAmbients = 0
-  const byAmbient = new Map<string, Array<{ candidate: Candidate; tileId: number | string }>>()
+  const byAmbient = new Map<
+    string,
+    { ambId: number | string; pairs: Array<{ candidate: Candidate; tileId: number | string }> }
+  >()
   for (const pair of createdPairs) {
-    const ambId = pair.candidate.ambientMediaId
-    if (!ambId) continue
-    const key = String(ambId)
-    if (!byAmbient.has(key)) byAmbient.set(key, [])
-    byAmbient.get(key)!.push(pair)
+    const ids =
+      pair.candidate.ambientMediaIds && pair.candidate.ambientMediaIds.length
+        ? pair.candidate.ambientMediaIds
+        : pair.candidate.ambientMediaId != null
+          ? [pair.candidate.ambientMediaId]
+          : []
+    for (const ambId of ids) {
+      const key = String(ambId)
+      if (!byAmbient.has(key)) byAmbient.set(key, { ambId, pairs: [] })
+      byAmbient.get(key)!.pairs.push(pair)
+    }
   }
-  for (const [ambKey, pairs] of byAmbient) {
+  for (const [ambKey, { ambId, pairs }] of byAmbient) {
     try {
-      const ambId = pairs[0].candidate.ambientMediaId!
       // Evitar duplicados si se vuelve a publicar: ¿ya hay un ambiente con esta imagen?
       const existing = await payload.find({
         collection: 'ambients',

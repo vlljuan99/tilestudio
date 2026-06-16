@@ -15,6 +15,7 @@ type Candidate = {
   colorCode?: string | null
   formats?: string[]
   finishes?: string[]
+  specialPieces?: string[]
   dominantColor?: string | null
   description?: string | null
   usage?: string[]
@@ -22,6 +23,7 @@ type Candidate = {
   pageImageUrl?: string
   textureImageUrl?: string
   ambientImageUrl?: string
+  ambientImageUrls?: string[]
   textureSource?: 'embedded' | 'crop'
   reviewStatus: 'pending' | 'accepted' | 'rejected'
 }
@@ -222,26 +224,36 @@ function CandidateRow({
             sin preview
           </div>
         )}
-        <div className="flex gap-2">
-          {c.ambientImageUrl && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={c.ambientImageUrl}
-              alt="Ambiente"
-              title="Foto ambiente"
-              className="w-1/2 aspect-[4/3] object-cover rounded border border-border"
-            />
-          )}
-          {c.textureImageUrl && c.pageImageUrl && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={c.pageImageUrl}
-              alt={`Página ${c.page}`}
-              title="Página completa"
-              className="w-1/2 aspect-[4/3] object-cover rounded border border-border"
-            />
-          )}
-        </div>
+        {(() => {
+          const ambients = c.ambientImageUrls?.length
+            ? c.ambientImageUrls
+            : c.ambientImageUrl
+              ? [c.ambientImageUrl]
+              : []
+          return (
+            <div className="flex flex-wrap gap-2">
+              {ambients.map((url, i) => (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  key={i}
+                  src={url}
+                  alt={`Entorno ${i + 1}`}
+                  title={`Entorno ${i + 1} de ${ambients.length}`}
+                  className="w-[calc(50%-0.25rem)] aspect-[4/3] object-cover rounded border border-border"
+                />
+              ))}
+              {c.textureImageUrl && c.pageImageUrl && ambients.length === 0 && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={c.pageImageUrl}
+                  alt={`Página ${c.page}`}
+                  title="Página completa"
+                  className="w-1/2 aspect-[4/3] object-cover rounded border border-border"
+                />
+              )}
+            </div>
+          )
+        })()}
         <p className="text-xs text-muted-foreground">
           {c.pages && c.pages.length > 1 ? `páginas ${c.pages.join(', ')}` : `página ${c.page}`} del
           PDF

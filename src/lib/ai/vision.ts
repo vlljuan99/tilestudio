@@ -41,20 +41,72 @@ export type PageType =
   | 'special-pieces'
   | 'other'
 
+/** Una foto de estancia real (entorno) presente en la página. */
+export type AmbientRegion = {
+  /** Bounding box [x1,y1,x2,y2] normalizado 0-1 de la foto. */
+  bbox: [number, number, number, number]
+  /**
+   * Nombres de producto visibles como callouts en la foto (ej. "Cōre Mix Taupe"),
+   * SIN el formato. Permite enlazar el entorno con variantes de otras páginas.
+   */
+  products?: string[]
+  /** Superficies donde se aplica el azulejo en la foto: "floor" | "wall" | "other". */
+  surfaces?: string[]
+}
+
+/**
+ * Datos a nivel de SERIE cuando la página los presenta una sola vez para toda la
+ * colección, sin repetirlos por color (típico de NewTiles: la ficha técnica lista
+ * "Formatos: 20x120" para los 4 colores de la serie). El worker los propaga a
+ * todas las variantes de la misma serie.
+ */
+export type SeriesInfo = {
+  name?: string | null
+  formats?: string[]
+  finishes?: string[]
+  /** Piezas especiales (peldaños, rodapiés, mosaicos…): ["Rodapié 8x60", "Hexágono mosaico 24x28"]. */
+  specialPieces?: string[]
+  description?: string | null
+}
+
 export type ExtractionResult = {
   products: LLMProduct[]
   brandDetected?: string | null
   collectionDetected?: string | null
   /** Tipo de página detectado (ayuda al worker a decidir qué hacer con ella). */
   pageType?: PageType | null
-  /** Bounding box [x1,y1,x2,y2] normalizado 0-1 de la foto ambiente principal. */
+  /** TODAS las fotos de estancia real de la página (un spread puede tener 2+). */
+  ambients?: AmbientRegion[]
+  /** Datos comunes de la serie si la página los da sin desglosar por color. */
+  series?: SeriesInfo | null
+
+  // -- Compatibilidad con el prompt anterior (campos sueltos de un solo ambiente) --
+  /** @deprecated usar `ambients`. */
   ambientBbox?: [number, number, number, number] | null
-  /**
-   * Nombres de producto visibles en la foto ambiente (callouts tipo
-   * "CŌRE MIX TAUPE 120X280"), sin el formato. Permite enlazar el ambiente
-   * con variantes que se extraen en otras páginas.
-   */
+  /** @deprecated usar `ambients[].products`. */
   ambientProducts?: string[]
+}
+
+/**
+ * Normaliza la salida del LLM a la forma canónica: convierte los campos antiguos
+ * de ambiente único (`ambientBbox`/`ambientProducts`) al array `ambients`, y
+ * garantiza que `products`/`ambients` existen.
+ */
+export function normalizeExtraction(raw: any): ExtractionResult {
+  const r = (raw && typeof raw === 'object' ? raw : {}) as ExtractionResult
+  const ambients: AmbientRegion[] = Array.isArray(r.ambients) ? r.ambients.filter((a) => Array.isArray(a?.bbox)) : []
+  // Retrocompat: si vino el campo antiguo, lo añadimos como un ambiente más.
+  if (ambients.length === 0 && Array.isArray(r.ambientBbox)) {
+    ambients.push({ bbox: r.ambientBbox as any, products: r.ambientProducts || [] })
+  }
+  return {
+    products: Array.isArray(r.products) ? r.products : [],
+    brandDetected: r.brandDetected ?? null,
+    collectionDetected: r.collectionDetected ?? null,
+    pageType: r.pageType ?? null,
+    ambients,
+    series: r.series ?? null,
+  }
 }
 
 // -- System prompt (compartido) ----------------------------------------------
@@ -62,58 +114,67 @@ export type ExtractionResult = {
 export const VISION_SYSTEM_PROMPT = `Eres un asistente que extrae información de catálogos de azulejos de fabricantes españoles.
 
 Recibirás la imagen de una o dos páginas (un spread) de un catálogo en PDF, junto con el texto extraído de la página.
-Tu tarea: (1) clasificar el tipo de página, (2) identificar cada AZULEJO PRESENTADO COMO VARIANTE INDIVIDUAL con su información y la coordenada de su textura, (3) localizar la foto ambiente si existe.
+Tu tarea: (1) clasificar el tipo de página, (2) identificar cada AZULEJO PRESENTADO COMO VARIANTE INDIVIDUAL con su información y la coordenada exacta de su textura/swatch, (3) localizar TODAS las fotos de estancia (entornos), (4) capturar los datos comunes de la serie si la página los da sin desglosar por color.
 
 TIPOS DE PÁGINA ("pageType"):
 - "cover": portada del catálogo. products: [].
-- "index": índice / sumario. products: [].
-- "intro": presentación de la colección o de una serie (texto editorial, foto de inspiración). products: []. Si hay una foto de estancia real con azulejo aplicado, da su ambientBbox.
-- "palette": muestrario de colores de una serie — varios swatches rectangulares con nombre de color (y a menudo códigos RAL/NCS). Extrae TODOS los colores del muestrario como productos, uno por swatch (si hay 8 swatches, products tiene 8 elementos), cada uno con su colorCode y su textureBbox.
-- "texture": una o dos texturas a tamaño completo (media página o página entera cada una) con el nombre de la variante sobreimpreso (ej. "cōre ivory"). CADA textura ES una variante; su textureBbox es la mitad/zona que ocupa. NO es foto ambiente.
-- "technical": fichas con tablas de datos (formatos, códigos, embalaje, normas). Cada variante con su swatch y tablas es un producto.
-- "ambient": foto(s) de estancia decorada con el azulejo aplicado, a veces con callouts del producto.
-- "graphic-variation": muestra la variación gráfica/tonal entre piezas de UNA MISMA variante (la misma textura repetida). products: [] — NO son variantes distintas.
-- "special-pieces": piezas especiales (peldaños, rodapiés, mosaicos decorativos, "consulta disponibilidad"). products: [].
-- "other": contraportada, limpieza, certificaciones, contacto… products: [].
+- "index": índice / sumario / índice por formatos. products: [].
+- "intro": presentación de la colección o de una serie (texto editorial, foto de inspiración). products: []. Si hay foto(s) de estancia real, dalas en "ambients".
+- "palette": muestrario de colores de una serie — varios swatches rectangulares cada uno rotulado con su color (CEREZO, ROBLE, IVORY…) y a veces códigos RAL/NCS. Extrae TODOS los swatches como productos (si hay 8 swatches, products tiene 8 elementos), cada uno con su textureBbox preciso. Una página "hero" que combina una textura grande decorativa + una fila de swatches de color rotulados ES "palette": los productos son los swatches rotulados, NO la textura grande.
+- "texture": una o dos texturas a tamaño completo (media página o página entera) con el nombre de la variante sobreimpreso (ej. "cōre ivory"). CADA textura rotulada ES una variante; su textureBbox es la zona que ocupa. NO es foto de estancia.
+- "technical": fichas con tablas de datos (formatos, códigos, embalaje, normas, símbolos de acabado/resbaladicidad). Si lista cada color con su swatch, cada uno es un product. Si describe la serie EN CONJUNTO sin desglosar colores (ej. "COLECCIÓN ALBAR · 4 colores · Formatos: 20x120"), products: [] y rellena "series".
+- "ambient": una o más fotos de estancia decorada con el azulejo aplicado, a menudo con callouts del producto. Dalas TODAS en "ambients".
+- "graphic-variation": variación gráfica/tonal entre piezas de UNA MISMA variante (la misma textura repetida). products: [].
+- "special-pieces": página dedicada a piezas especiales (peldaños, rodapiés, mosaicos, cubrecantos). products: [].
+- "other": contraportada, limpieza, certificaciones, contacto, sostenibilidad… products: [].
 
 REGLAS DE VERACIDAD (CRÍTICO — prohibido inventar):
-- "sku": SOLO códigos de tarifa/producto impresos en la página (ej. "SOL23", "TECH04", "XXL06"). Los números de página NO son SKU. Los códigos RAL/NCS/Pantone NO son SKU (van en "colorCode"). Si no hay código impreso, sku: null. Si hay varios códigos para la variante (uno por formato/acabado), concaténalos: "TECH01 / TECH02 / TECH09".
-- "formats": SOLO formatos impresos PARA ESA variante (en su tabla o etiqueta). En cm, formato "120x280". Excluye pulgadas (48"x110"). Si la página no imprime formatos para la variante (ej. página de paleta o textura), formats: [].
-- "finishes": solo acabados que aparezcan (Matt, Lapatto, Brillo, Pulido, Satinado, Antideslizante…). En tablas técnicas, las columnas de acabado (ej. MATT, DUP, EXT) son los acabados disponibles: inclúyelas tal cual.
+- "variantName": nombre COMPLETO del producto = serie + color (ej. "Albar Cerezo", "Cōre Ivory"), aunque la página solo rotule el color ("CEREZO"). Usa el título de la serie visible en la página para componerlo. Así la misma variante se llama igual en todas sus páginas. "seriesName" = la serie (ej. "Albar", "Cōre Pro").
+- "sku": SOLO códigos de tarifa/producto impresos (ej. "SOL23", "TECH04", "M85", "P180"). Los números de página NO son SKU. Los códigos RAL/NCS/Pantone NO son SKU (van en "colorCode"). Si no hay, null. Si hay varios para la variante, concaténalos: "M85 / M90".
+- "formats": SOLO formatos impresos PARA ESA variante. En cm: "120x280", "20x120", "9,3x120". Excluye pulgadas (48"x110"). Si la página no imprime formato para la variante (paleta sin formato), formats: [].
+- "finishes": SOLO el acabado de superficie (Matt, Mate, Lapatto, Brillo, Pulido, Satinado, Natural, In/Out, Antideslizante). NO son acabados y NO debes incluir: resistencia al deslizamiento (R9, R10, R11, R12, R13), clases de uso (Clase/Class 1-5), PEI, ni absorción de agua — esos datos van implícitos en "usage", no aquí.
 - "colorCode": código de color impreso junto al swatch (ej. "RAL 1013 / NCS S 1010-Y20R"), si no hay, null.
-- "variantName": nombre COMPLETO del producto = serie + color (ej. "Cōre Pro Ivory"), aunque la página solo rotule "IVORY". Así la misma variante se llama igual en todas las páginas. "seriesName" = la serie (ej. "Cōre Pro").
-- "collectionDetected": el nombre del catálogo/colección global (suele estar en portada o cabeceras), NO la serie de la página.
+- "collectionDetected": SOLO el nombre del CATÁLOGO/libro global (ej. "Catálogo General 2026", "Cōre Tech"), normalmente en portada o pies de página. Un banner grande de serie como "ALBAR COLLECTION" o "NATURE COLLECTION" NO es la colección global: eso es la SERIE (va en seriesName/variantName). Si en la página solo se ve el banner de la serie y no el nombre del catálogo, deja collectionDetected en null.
 - "brandDetected": la marca/fabricante si aparece (logo o texto).
-- Usos ("usage"): "suelo interior", "pared baño", "pared cocina", "exterior". Infiérelos por las normas de resbaladicidad (R10/R11, Clase 3) y contexto. Estancias ("rooms"): baño, cocina, salón, dormitorio, exterior — solo si hay fotos ambiente o el texto lo indica.
-- Usa el TEXTO extraído como fuente autoritativa para nombres y códigos exactos; la imagen, para posiciones y para lo que el texto no recoja.
+- "usage": "suelo interior", "pared baño", "pared cocina", "exterior". Infiérelos por resbaladicidad (R10/R11, Clase 3) y contexto. "rooms": baño, cocina, salón, dormitorio, exterior — solo si hay foto de estancia o el texto lo indica.
+- Usa el TEXTO extraído como fuente autoritativa para nombres y códigos exactos; la imagen, para posiciones y lo que el texto no recoja.
 
 REGLAS DE COORDENADAS (CRÍTICO):
 - Coordenadas normalizadas 0-1 sobre la imagen completa: x1,y1 esquina superior izquierda; x2,y2 inferior derecha.
-- "ambientBbox": SOLO una fotografía de ESTANCIA REAL con MUEBLES o PERSONAS visible (salón, cocina, baño, dormitorio, terraza, local comercial…). El espacio debe tener perspectiva tridimensional: suelo/pared/techo y al menos un elemento de mobiliario, decoración o persona. NUNCA es ambient: una ficha técnica, una paleta de colores, una cuadrícula de swatches/muestras, un primer plano de textura, una página de especificaciones con tablas, una variación gráfica, una imagen de producto sobre fondo blanco, o cualquier composición plana sin profundidad espacial. Si no hay foto de estancia con muebles, devuelve null.
-- "ambientProducts": si la foto ambiente tiene callouts o etiquetas con nombres de producto (ej. "CŌRE MIX TAUPE 120X280"), lista los nombres SIN el formato: ["Cōre Mix Taupe"]. Si no hay callouts, [].
-- Un producto que SOLO aparece como callout de la foto ambiente va en "ambientProducts", NUNCA en "products" (no tiene swatch propio en esta página; su ficha saldrá en otra).
-- "textureBbox" (por variante): rectángulo de la textura/swatch de ESA variante (sin el rótulo, sin marco). Cada variante tiene un rectángulo distinto. En páginas "texture", la mitad/zona completa que ocupa esa textura. Si no la localizas con seguridad, null.
+- "textureBbox" (por variante): rectángulo CEÑIDO SOLO a la muestra cerámica de ESA variante. El rótulo de texto (nombre y formato) suele ir DEBAJO de la muestra: NO lo incluyas, ni los márgenes blancos. En una rejilla de muchos swatches, da el rectángulo EXACTO de cada celda de color (la zona coloreada que está encima de su rótulo), sin solaparte con las celdas vecinas. Sé preciso: una bbox holgada captura el texto o la celda de al lado. En páginas "texture", la zona completa de la textura. Si no la localizas con seguridad, null.
+
+ENTORNOS — "ambients" (array, una entrada por foto de estancia):
+- Incluye SOLO fotografías de ESTANCIA REAL con perspectiva tridimensional y MUEBLES, decoración o PERSONAS (salón, cocina, baño, dormitorio, terraza, local…). Un spread con 2 fotos de estancia da 2 entradas.
+- NUNCA es entorno: una ficha técnica, una paleta, una cuadrícula de swatches, un primer plano de textura, una TEXTURA GRANDE A SANGRE de madera/piedra/cemento sin muebles, una imagen de producto sobre fondo blanco, una variación gráfica, o cualquier composición plana sin profundidad.
+- "bbox": rectángulo de la foto. "products": nombres de los azulejos citados en callouts SIN el formato (ej. "WALL | ALBAR HAYA - 20x120" → ["Albar Haya"]). "surfaces": ["floor"], ["wall"] o ambas según indique el callout (FLOOR/SUELO → "floor", WALL/PARED → "wall").
+- Un producto que SOLO aparece como callout de un entorno (sin swatch propio en esta página) va en ambients[].products, NUNCA en products.
+
+DATOS DE SERIE — "series" (cuando la página describe la serie sin desglosar por color):
+- "name": nombre de la serie. "formats"/"finishes": los que apliquen a toda la serie. "specialPieces": piezas especiales con su formato (ej. ["Rodapié 8x60", "Hexágono mosaico 24x28", "Peldaño 33x120"]). "description": texto editorial de la serie.
+- Si la página YA lista los colores como products individuales, no dupliques: deja series en null.
 
 Devuelve JSON estricto con esta forma:
 {
-  "pageType": "technical",
-  "brandDetected": "Pamesa" | null,
-  "collectionDetected": "Cōre Tech" | null,
-  "ambientBbox": [0.05, 0.12, 0.45, 0.88] | null,
-  "ambientProducts": ["Cōre Ivory"],
+  "pageType": "palette",
+  "brandDetected": "NewTiles" | null,
+  "collectionDetected": "..." | null,
+  "ambients": [
+    { "bbox": [0.05, 0.12, 0.45, 0.88], "products": ["Albar Haya"], "surfaces": ["floor", "wall"] }
+  ],
+  "series": { "name": "Albar", "formats": ["20x120"], "finishes": ["Matt", "Anti-slip"], "specialPieces": ["Rodapié 8x60", "Hexágono mosaico 24x28"], "description": "Inspirada en la madera natural." } | null,
   "products": [
     {
-      "seriesName": "Cōre",
-      "variantName": "Cōre Ivory",
-      "sku": "TECH01 / TECH02 / TECH09",
-      "colorCode": "RAL 1013 / NCS S 1010-Y20R",
-      "formats": ["120x120", "60x120", "60x60", "30x60"],
-      "finishes": ["Matt", "Ext"],
-      "dominantColor": "blanco marfil",
-      "description": "Gres porcelánico inspirado en la piedra caliza.",
-      "usage": ["suelo interior", "pared baño"],
-      "rooms": ["salón"],
-      "textureBbox": [0.04, 0.14, 0.22, 0.44]
+      "seriesName": "Albar",
+      "variantName": "Albar Cerezo",
+      "sku": "M85 / M90",
+      "colorCode": null,
+      "formats": ["20x120"],
+      "finishes": ["Matt"],
+      "dominantColor": "marrón cerezo",
+      "description": null,
+      "usage": ["suelo interior"],
+      "rooms": [],
+      "textureBbox": [0.06, 0.54, 0.38, 0.66]
     }
   ]
 }`
@@ -281,12 +342,12 @@ export class OpenAIVisionExtractor implements VisionExtractor {
     this.outputTokens += response.usage?.completion_tokens || 0
 
     const content = response.choices[0]?.message?.content
-    if (!content) return { products: [] }
+    if (!content) return { products: [], ambients: [] }
     try {
-      return JSON.parse(content) as ExtractionResult
+      return normalizeExtraction(JSON.parse(content))
     } catch {
       console.warn('[OpenAIVisionExtractor] No se pudo parsear JSON:', content.slice(0, 200))
-      return { products: [] }
+      return { products: [], ambients: [] }
     }
   }
 }
@@ -364,12 +425,12 @@ export class GeminiVisionExtractor implements VisionExtractor {
     this.outputTokens += (meta?.candidatesTokenCount || 0) + (meta?.thoughtsTokenCount || 0)
 
     const text = result.text
-    if (!text) return { products: [] }
+    if (!text) return { products: [], ambients: [] }
     try {
-      return JSON.parse(text) as ExtractionResult
+      return normalizeExtraction(JSON.parse(text))
     } catch {
       console.warn('[GeminiVisionExtractor] No se pudo parsear JSON:', text.slice(0, 200))
-      return { products: [] }
+      return { products: [], ambients: [] }
     }
   }
 }
