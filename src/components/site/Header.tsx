@@ -4,7 +4,8 @@ import { useState } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { Button } from '@/components/ui/button'
-import { Sparkles, Menu, X } from 'lucide-react'
+import { Sparkles, Menu, X, Heart } from 'lucide-react'
+import { useFavorites } from '@/lib/favorites'
 
 type Props = {
   settings: {
@@ -25,6 +26,7 @@ export function SiteHeader({ settings }: Props) {
   const name = settings?.siteName || 'Tilestudio'
   const logo = settings?.logo && typeof settings.logo === 'object' ? settings.logo : null
   const [open, setOpen] = useState(false)
+  const { count } = useFavorites()
 
   return (
     <header className="sticky top-0 z-40 border-b border-border bg-background/85 backdrop-blur">
@@ -54,6 +56,19 @@ export function SiteHeader({ settings }: Props) {
         </nav>
 
         <div className="flex items-center gap-2">
+          <Link
+            href="/favoritos"
+            onClick={() => setOpen(false)}
+            aria-label="Mis favoritos"
+            className="relative p-2 rounded-md hover:bg-muted"
+          >
+            <Heart className="h-5 w-5" />
+            {count > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 inline-flex min-w-[18px] h-[18px] items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold text-primary-foreground">
+                {count}
+              </span>
+            )}
+          </Link>
           <Button asChild size="sm" className="hidden sm:inline-flex">
             <Link href="/simulador">
               <Sparkles className="h-4 w-4" /> Probar con IA

@@ -18,6 +18,33 @@ async function getFeaturedTiles() {
   return result.docs
 }
 
+// Bloques "explora por estancia": cada estancia se ilustra con la imagen de
+// ambiente de uno de sus azulejos publicados. Estancias sin azulejos no se
+// muestran (evita enlaces a un catálogo vacío).
+async function getRoomShowcase() {
+  const payload = await getPayload({ config })
+  const rooms = await payload.find({ collection: 'rooms', limit: 12, sort: 'name', depth: 0 })
+  const withImage = await Promise.all(
+    (rooms.docs as any[]).map(async (room) => {
+      const tiles = await payload.find({
+        collection: 'tiles',
+        where: { and: [{ published: { equals: true } }, { rooms: { in: [room.id] } }] },
+        limit: 1,
+        depth: 1,
+        sort: '-featured',
+      })
+      const tile = tiles.docs[0] as any
+      if (!tile) return null
+      return {
+        ...room,
+        tileCount: tiles.totalDocs,
+        image: tile.mainImage || tile.textureImage || null,
+      }
+    }),
+  )
+  return withImage.filter(Boolean) as any[]
+}
+
 async function getSettings() {
   const payload = await getPayload({ config })
   try {
@@ -28,7 +55,11 @@ async function getSettings() {
 }
 
 export default async function HomePage() {
-  const [tiles, settings] = await Promise.all([getFeaturedTiles(), getSettings()])
+  const [tiles, settings, roomShowcase] = await Promise.all([
+    getFeaturedTiles(),
+    getSettings(),
+    getRoomShowcase(),
+  ])
 
   const heroTitle =
     settings?.heroTitle ||
@@ -108,6 +139,49 @@ export default async function HomePage() {
           </div>
         </div>
       </section>
+
+      {/* EXPLORA POR ESTANCIA */}
+      {roomShowcase.length > 0 && (
+        <section className="container py-16">
+          <div className="flex items-end justify-between mb-8">
+            <div className="space-y-1">
+              <h2 className="text-3xl">¿Qué vas a reformar?</h2>
+              <p className="text-muted-foreground text-sm">
+                Ve directo a los azulejos pensados para tu espacio.
+              </p>
+            </div>
+            <Link href="/ambientes" className="text-sm hover:underline shrink-0">
+              Ver ambientes →
+            </Link>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+            {roomShowcase.map((room: any) => (
+              <Link
+                key={room.id}
+                href={`/catalogo?estancia=${room.slug}`}
+                className="group block aspect-[4/3] relative overflow-hidden rounded-xl bg-muted"
+              >
+                {room.image?.url && (
+                  <Image
+                    src={room.image.url}
+                    alt={room.image.alt || room.name}
+                    fill
+                    sizes="(max-width: 768px) 50vw, 25vw"
+                    className="object-cover transition-transform duration-500 group-hover:scale-[1.03]"
+                  />
+                )}
+                <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/10 to-transparent" />
+                <div className="absolute inset-x-0 bottom-0 p-4">
+                  <p className="text-white text-lg font-medium leading-tight">{room.name}</p>
+                  <p className="text-white/70 text-xs">
+                    {room.tileCount === 1 ? '1 azulejo' : `${room.tileCount} azulejos`}
+                  </p>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* DESTACADOS */}
       {tiles.length > 0 && (

@@ -5,6 +5,9 @@ import { getPayload } from 'payload'
 import config from '@payload-config'
 
 import { Button } from '@/components/ui/button'
+import { TileCard } from '@/components/catalog/TileCard'
+import { TileCalculator } from '@/components/catalog/TileCalculator'
+import { FavoriteButton } from '@/components/catalog/FavoriteButton'
 import { Sparkles, MessageCircle } from 'lucide-react'
 import { formatPrice, buildWhatsAppLink } from '@/lib/utils'
 
@@ -17,6 +20,54 @@ async function getTile(slug: string) {
     depth: 2,
   })
   return (res.docs[0] as any) || null
+}
+
+// Relacionados: primero de la misma colección; si no llega a 4, se completa
+// con azulejos que comparten algún color.
+async function getRelatedTiles(tile: any, limit = 4) {
+  const payload = await getPayload({ config })
+  const excludeIds = [tile.id]
+  const related: any[] = []
+
+  const collectionId = typeof tile.collection === 'object' ? tile.collection?.id : tile.collection
+  if (collectionId) {
+    const res = await payload.find({
+      collection: 'tiles',
+      where: {
+        and: [
+          { published: { equals: true } },
+          { collection: { equals: collectionId } },
+          { id: { not_in: excludeIds } },
+        ],
+      },
+      limit,
+      depth: 1,
+    })
+    related.push(...(res.docs as any[]))
+  }
+
+  if (related.length < limit) {
+    const colorIds = (tile.colors || [])
+      .map((c: any) => (typeof c === 'object' ? c?.id : c))
+      .filter(Boolean)
+    if (colorIds.length) {
+      const res = await payload.find({
+        collection: 'tiles',
+        where: {
+          and: [
+            { published: { equals: true } },
+            { colors: { in: colorIds } },
+            { id: { not_in: [...excludeIds, ...related.map((t) => t.id)] } },
+          ],
+        },
+        limit: limit - related.length,
+        depth: 1,
+      })
+      related.push(...(res.docs as any[]))
+    }
+  }
+
+  return related
 }
 
 async function getSettings() {
@@ -51,6 +102,8 @@ export default async function TileDetail({
   const [tile, settings] = await Promise.all([getTile(slug), getSettings()])
   if (!tile) notFound()
 
+  const related = await getRelatedTiles(tile)
+
   const whatsapp = buildWhatsAppLink({
     number: settings?.whatsappNumber,
     message: `Hola, me interesa el azulejo "${tile.name}"${tile.sku ? ` (ref. ${tile.sku})` : ''}. ¿Me podéis dar más información?`,
@@ -73,7 +126,8 @@ export default async function TileDetail({
   ].filter((a) => a.value)
 
   return (
-    <div className="container py-8 md:py-12 grid md:grid-cols-2 gap-8 lg:gap-12">
+    <div className="container py-8 md:py-12 space-y-16">
+    <div className="grid md:grid-cols-2 gap-8 lg:gap-12">
       {/* Columna izquierda: imagen de ambiente grande */}
       <div className="md:sticky md:top-24 md:self-start">
         <div className="aspect-[4/5] relative overflow-hidden rounded-lg bg-muted">
@@ -124,7 +178,12 @@ export default async function TileDetail({
               </a>
             </Button>
           )}
+          <FavoriteButton slug={tile.slug} variant="button" />
         </div>
+
+        {tile.orientativePrice != null && tile.priceUnit === 'm2' && (
+          <TileCalculator pricePerM2={tile.orientativePrice} />
+        )}
 
         <dl className="grid grid-cols-2 gap-y-3 gap-x-6 border-t border-border pt-6 text-sm">
           {attributes.map((a) => (
@@ -152,6 +211,27 @@ export default async function TileDetail({
           </div>
         )}
       </div>
+    </div>
+
+    {/* Relacionados: mantiene al cliente navegando sin volver al listado */}
+    {related.length > 0 && (
+      <section>
+        <h2 className="text-2xl mb-6">
+          {tile.collection?.name &&
+          related.every((t) => {
+            const cid = typeof t.collection === 'object' ? t.collection?.id : t.collection
+            return cid === tile.collection.id
+          })
+            ? `Más de la colección ${tile.collection.name}`
+            : 'También te puede gustar'}
+        </h2>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-8">
+          {related.map((t) => (
+            <TileCard key={t.id} tile={t} />
+          ))}
+        </div>
+      </section>
+    )}
     </div>
   )
 }

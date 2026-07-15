@@ -2,95 +2,128 @@
 
 import { useRouter, useSearchParams, usePathname } from 'next/navigation'
 import { useTransition } from 'react'
+import { cn } from '@/lib/utils'
 
-type Option = { id: number | string; name: string; slug: string }
-
-type Props = {
-  colors: Option[]
-  finishes: Option[]
-  formats: Option[]
-  rooms: Option[]
-  usages: Option[]
-  collections: Option[]
+export type FacetOption = {
+  slug: string
+  name: string
+  count: number
+  hex?: string | null
 }
 
-const FILTER_FIELDS: { key: keyof Props; label: string }[] = [
-  { key: 'colors', label: 'Color' },
-  { key: 'formats', label: 'Formato' },
-  { key: 'finishes', label: 'Acabado' },
-  { key: 'rooms', label: 'Estancia' },
-  { key: 'usages', label: 'Uso' },
-  { key: 'collections', label: 'Colección' },
-]
-
-const URL_KEY: Record<string, string> = {
-  colors: 'color',
-  formats: 'formato',
-  finishes: 'acabado',
-  rooms: 'estancia',
-  usages: 'uso',
-  collections: 'coleccion',
+export type FacetGroup = {
+  urlKey: string
+  label: string
+  swatches?: boolean
+  options: FacetOption[]
 }
 
-export function CatalogFilters(props: Props) {
+export function readSelected(params: URLSearchParams, urlKey: string): string[] {
+  const raw = params.get(urlKey)
+  if (!raw) return []
+  return raw.split(',').filter(Boolean)
+}
+
+export function countActiveFilters(params: URLSearchParams, groups: FacetGroup[]): number {
+  return groups.reduce((sum, g) => sum + readSelected(params, g.urlKey).length, 0)
+}
+
+export function CatalogFilters({ groups }: { groups: FacetGroup[] }) {
   const router = useRouter()
   const pathname = usePathname()
   const params = useSearchParams()
   const [pending, startTransition] = useTransition()
 
-  function setParam(key: string, value: string) {
-    const next = new URLSearchParams(params.toString())
-    if (value) next.set(key, value)
-    else next.delete(key)
+  function navigate(sp: URLSearchParams) {
+    sp.delete('pagina')
+    const qs = sp.toString()
     startTransition(() => {
-      router.replace(`${pathname}?${next.toString()}`, { scroll: false })
+      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false })
     })
+  }
+
+  function toggle(urlKey: string, slug: string) {
+    const sp = new URLSearchParams(params.toString())
+    const selected = readSelected(sp, urlKey)
+    const next = selected.includes(slug)
+      ? selected.filter((s) => s !== slug)
+      : [...selected, slug]
+    if (next.length) sp.set(urlKey, next.join(','))
+    else sp.delete(urlKey)
+    navigate(sp)
   }
 
   function clearAll() {
-    startTransition(() => {
-      router.replace(pathname, { scroll: false })
-    })
+    const sp = new URLSearchParams(params.toString())
+    for (const group of groups) sp.delete(group.urlKey)
+    navigate(sp)
   }
 
-  const hasAny = FILTER_FIELDS.some(({ key }) => params.get(URL_KEY[key]))
+  const activeCount = countActiveFilters(params, groups)
 
   return (
-    <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-      {FILTER_FIELDS.map(({ key, label }) => {
-        const options = props[key] as Option[]
-        const urlKey = URL_KEY[key]
-        const current = params.get(urlKey) || ''
+    <div className={cn('space-y-6', pending && 'opacity-60 pointer-events-none')}>
+      {groups.map((group) => {
+        const selected = readSelected(params, group.urlKey)
+        // Opciones sin resultados se ocultan, salvo que estén seleccionadas
+        // (para poder des-seleccionarlas).
+        const visible = group.options.filter(
+          (opt) => opt.count > 0 || selected.includes(opt.slug),
+        )
+        if (visible.length === 0) return null
         return (
-          <label key={key} className="text-sm">
-            <span className="block mb-1 text-muted-foreground">{label}</span>
-            <select
-              value={current}
-              onChange={(e) => setParam(urlKey, e.target.value)}
-              disabled={pending}
-              className="w-full h-10 rounded-md border border-border bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-            >
-              <option value="">Todos</option>
-              {options.map((opt) => (
-                <option key={opt.id} value={opt.slug}>
-                  {opt.name}
-                </option>
-              ))}
-            </select>
-          </label>
+          <fieldset key={group.urlKey}>
+            <legend className="text-xs uppercase tracking-wider text-muted-foreground mb-2">
+              {group.label}
+            </legend>
+            <div className="flex flex-wrap gap-2">
+              {visible.map((opt) => {
+                const isSelected = selected.includes(opt.slug)
+                return (
+                  <button
+                    key={opt.slug}
+                    type="button"
+                    onClick={() => toggle(group.urlKey, opt.slug)}
+                    aria-pressed={isSelected}
+                    className={cn(
+                      'inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm transition-colors',
+                      isSelected
+                        ? 'border-foreground bg-foreground text-background'
+                        : 'border-border bg-background hover:border-foreground/40',
+                    )}
+                  >
+                    {group.swatches && (
+                      <span
+                        aria-hidden
+                        className="h-3.5 w-3.5 rounded-full border border-black/10 shrink-0"
+                        style={{ backgroundColor: opt.hex || '#e5e5e5' }}
+                      />
+                    )}
+                    <span>{opt.name}</span>
+                    <span
+                      className={cn(
+                        'text-xs',
+                        isSelected ? 'text-background/70' : 'text-muted-foreground',
+                      )}
+                    >
+                      {opt.count}
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+          </fieldset>
         )
       })}
-      {hasAny && (
-        <div className="flex items-end">
-          <button
-            type="button"
-            onClick={clearAll}
-            disabled={pending}
-            className="text-sm underline text-muted-foreground hover:text-foreground"
-          >
-            Limpiar filtros
-          </button>
-        </div>
+
+      {activeCount > 0 && (
+        <button
+          type="button"
+          onClick={clearAll}
+          className="text-sm underline text-muted-foreground hover:text-foreground"
+        >
+          Limpiar filtros ({activeCount})
+        </button>
       )}
     </div>
   )
