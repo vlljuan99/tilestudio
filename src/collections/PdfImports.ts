@@ -23,7 +23,7 @@ export const PdfImports: CollectionConfig = {
       'createdAt',
     ],
     description:
-      'Sube aquí los catálogos PDF de tus proveedores (Pamesa, NewTiles, etc.). El sistema lee el PDF, identifica los azulejos con sus fotos, y los añade a tu catálogo. Luego puedes revisarlos antes de mostrarlos a tus clientes.',
+      'Catálogos PDF de tus proveedores (Pamesa, NewTiles, etc.). Para importar uno nuevo usa el asistente en /pdf-imports/new — esta vista es el detalle técnico de cada importación.',
   },
   access: {
     read: ({ req }) => Boolean(req.user),
@@ -138,6 +138,26 @@ export const PdfImports: CollectionConfig = {
       admin: {
         readOnly: true,
       },
+    },
+    {
+      type: 'row',
+      fields: [
+        {
+          name: 'pdfTotalPages',
+          label: 'Páginas del PDF',
+          type: 'number',
+          admin: { readOnly: true, description: 'Total de páginas del fichero.' },
+        },
+        {
+          name: 'lastProcessedPage',
+          label: 'Última página procesada',
+          type: 'number',
+          admin: {
+            readOnly: true,
+            description: 'Permite continuar la importación donde se quedó.',
+          },
+        },
+      ],
     },
     {
       type: 'row',

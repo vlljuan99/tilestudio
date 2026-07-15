@@ -130,7 +130,7 @@ TIPOS DE PÁGINA ("pageType"):
 
 REGLAS DE VERACIDAD (CRÍTICO — prohibido inventar):
 - "variantName": nombre COMPLETO del producto = serie + color (ej. "Albar Cerezo", "Cōre Ivory"), aunque la página solo rotule el color ("CEREZO"). Usa el título de la serie visible en la página para componerlo. Así la misma variante se llama igual en todas sus páginas. "seriesName" = la serie (ej. "Albar", "Cōre Pro").
-- "sku": SOLO códigos de tarifa/producto impresos (ej. "SOL23", "TECH04", "M85", "P180"). Los números de página NO son SKU. Los códigos RAL/NCS/Pantone NO son SKU (van en "colorCode"). Si no hay, null. Si hay varios para la variante, concaténalos: "M85 / M90".
+- "sku": SOLO códigos de tarifa/producto impresos (ej. "SOL23", "TECH04", "M85", "P180"). Los números de página NO son SKU. Los códigos RAL/NCS/Pantone NO son SKU (van en "colorCode"). El nombre del grupo o tramo de tarifa (ej. "GENERAL", "PRICE LIST B", "TARIFA 2") tampoco es un SKU. Si no hay, null. Si hay varios para la variante, concaténalos: "M85 / M90".
 - "formats": SOLO formatos impresos PARA ESA variante. En cm: "120x280", "20x120", "9,3x120". Excluye pulgadas (48"x110"). Si la página no imprime formato para la variante (paleta sin formato), formats: [].
 - "finishes": SOLO el acabado de superficie (Matt, Mate, Lapatto, Brillo, Pulido, Satinado, Natural, In/Out, Antideslizante). NO son acabados y NO debes incluir: resistencia al deslizamiento (R9, R10, R11, R12, R13), clases de uso (Clase/Class 1-5), PEI, ni absorción de agua — esos datos van implícitos en "usage", no aquí.
 - "colorCode": código de color impreso junto al swatch (ej. "RAL 1013 / NCS S 1010-Y20R"), si no hay, null.

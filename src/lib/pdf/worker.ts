@@ -20,7 +20,14 @@ import { getPayload, type Payload } from 'payload'
 import config from '@payload-config'
 import { loadPdf, iteratePages, getTotalPages } from './extractor'
 import { analyzePage } from './page-analysis'
-import { CandidateStore, type StoreFn, type StoredCandidate } from './candidate-store'
+import {
+  CandidateStore,
+  candidateKey,
+  unionList,
+  normalizeFormat,
+  type StoreFn,
+  type StoredCandidate,
+} from './candidate-store'
 import { getVisionExtractor, type UsageStats } from '../ai/vision'
 
 /** "1.234k tokens ≈ $0.42" — resumen del consumo de visión para el admin. */
@@ -108,6 +115,70 @@ function toPersisted(c: StoredCandidate): Candidate {
     reviewStatus: c.reviewStatus,
     publishedTileId: c.publishedTileId,
   }
+}
+
+/**
+ * Fusiona los candidatos de EJECUCIONES ANTERIORES (otros rangos de páginas del
+ * mismo PDF) con los recién extraídos, para que lanzar la importación por lotes
+ * o reanudarla tras un fallo no borre lo ya conseguido.
+ *
+ * Regla: los previos se conservan tal cual (con su id, estado de revisión y
+ * publishedTileId); si una variante nueva coincide por nombre normalizado con
+ * una previa, se fusiona DENTRO de la previa (unión de listas, la textura solo
+ * se pisa si la previa no tenía); las nuevas sin match se añaden al final.
+ */
+export function mergeWithPrevious(previous: Candidate[], fresh: Candidate[]): Candidate[] {
+  if (previous.length === 0) return fresh
+  const byKey = new Map(previous.map((c) => [candidateKey(c.variantName), c]))
+  const out = [...previous]
+  for (const cand of fresh) {
+    const prev = byKey.get(candidateKey(cand.variantName))
+    if (!prev) {
+      out.push(cand)
+      continue
+    }
+    prev.pages = Array.from(new Set([...(prev.pages || [prev.page]), ...(cand.pages || [cand.page])])).sort(
+      (a, b) => a - b,
+    )
+    prev.formats = unionList(prev.formats, cand.formats, normalizeFormat)
+    prev.finishes = unionList(prev.finishes, cand.finishes)
+    prev.specialPieces = unionList(prev.specialPieces, cand.specialPieces)
+    prev.usage = unionList(prev.usage, cand.usage)
+    prev.rooms = unionList(prev.rooms, cand.rooms)
+    if (!prev.sku && cand.sku) prev.sku = cand.sku
+    if (!prev.colorCode && cand.colorCode) prev.colorCode = cand.colorCode
+    if (!prev.dominantColor && cand.dominantColor) prev.dominantColor = cand.dominantColor
+    if (!prev.seriesName && cand.seriesName) prev.seriesName = cand.seriesName
+    if ((cand.description?.length || 0) > (prev.description?.length || 0)) {
+      prev.description = cand.description
+    }
+    if (!prev.textureMediaId && cand.textureMediaId) {
+      prev.textureImageUrl = cand.textureImageUrl
+      prev.textureMediaId = cand.textureMediaId
+      prev.textureSource = cand.textureSource
+      prev.textureArea = cand.textureArea
+    }
+    const prevAmbIds = (prev.ambientMediaIds || []).map(String)
+    const addIdx = (cand.ambientMediaIds || [])
+      .map((id, i) => (prevAmbIds.includes(String(id)) ? -1 : i))
+      .filter((i) => i >= 0)
+    if (addIdx.length > 0) {
+      prev.ambientMediaIds = [...(prev.ambientMediaIds || []), ...addIdx.map((i) => cand.ambientMediaIds![i])]
+      prev.ambientImageUrls = [
+        ...(prev.ambientImageUrls || []),
+        ...addIdx.map((i) => cand.ambientImageUrls?.[i] || ''),
+      ]
+      if (!prev.ambientMediaId) {
+        prev.ambientMediaId = prev.ambientMediaIds[0]
+        prev.ambientImageUrl = prev.ambientImageUrls[0]
+      }
+    }
+    if (!prev.pageMediaId && cand.pageMediaId) {
+      prev.pageMediaId = cand.pageMediaId
+      prev.pageImageUrl = cand.pageImageUrl
+    }
+  }
+  return out
 }
 
 /**
@@ -228,6 +299,18 @@ export async function runPdfImport(importId: number | string) {
     const effectiveTo = Math.min(toPage, fromPage + maxPages - 1)
     const pagesToProcess = effectiveTo - fromPage + 1
 
+    // Candidatos de ejecuciones anteriores sobre OTRO rango de páginas: se
+    // conservan y se fusionan con los nuevos (importación por lotes / reanudar).
+    // Los que caen enteros dentro del rango actual se descartan: se van a
+    // volver a extraer ahora mismo.
+    const prevRaw: Candidate[] = Array.isArray(importDoc.extractedItems)
+      ? (importDoc.extractedItems as Candidate[])
+      : []
+    const previousItems = prevRaw.filter((c) => {
+      const pages = c.pages && c.pages.length ? c.pages : [c.page]
+      return !pages.every((p) => p >= fromPage && p <= effectiveTo)
+    })
+
     await payload.update({
       collection: 'pdf-imports',
       id: importId,
@@ -267,6 +350,7 @@ export async function runPdfImport(importId: number | string) {
         data: {
           processedPages: processed,
           progressPercent: percent,
+          lastProcessedPage: page.pageNumber,
           currentStep: `Página ${page.pageNumber}: subiendo render y llamando a la IA…`,
         } as any,
       })
@@ -284,7 +368,7 @@ export async function runPdfImport(importId: number | string) {
         const analysis = await analyzePage(doc, page, extractor)
         const { added, merged } = await store.addPage(analysis, pageImage)
 
-        const persisted = store.candidates.map(toPersisted)
+        const persisted = mergeWithPrevious(previousItems, store.candidates.map(toPersisted))
         await mergeReviewStatuses(payload, importId, persisted)
         await payload.update({
           collection: 'pdf-imports',
@@ -310,6 +394,7 @@ export async function runPdfImport(importId: number | string) {
 
     const usage = extractor.getUsage()
     const usageSummary = formatUsage(usage)
+    const finalCount = mergeWithPrevious(previousItems, store.candidates.map(toPersisted)).length
     await payload.update({
       collection: 'pdf-imports',
       id: importId,
@@ -318,7 +403,7 @@ export async function runPdfImport(importId: number | string) {
         completedAt: new Date().toISOString(),
         progressPercent: 100,
         aiUsage: usage,
-        currentStep: `Listo. ${store.candidates.length} candidatos a revisar.${usageSummary ? ` ${usageSummary}` : ''}`,
+        currentStep: `Listo. ${finalCount} candidatos a revisar.${usageSummary ? ` ${usageSummary}` : ''}`,
       } as any,
     })
   } catch (err) {

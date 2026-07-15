@@ -503,7 +503,7 @@ export interface Generation {
   createdAt: string;
 }
 /**
- * Sube aquí los catálogos PDF de tus proveedores (Pamesa, NewTiles, etc.). El sistema lee el PDF, identifica los azulejos con sus fotos, y los añade a tu catálogo. Luego puedes revisarlos antes de mostrarlos a tus clientes.
+ * Catálogos PDF de tus proveedores (Pamesa, NewTiles, etc.). Para importar uno nuevo usa el asistente en /pdf-imports/new — esta vista es el detalle técnico de cada importación.
  *
  * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "pdf-imports".
@@ -535,6 +535,14 @@ export interface PdfImport {
    */
   maxPages?: number | null;
   status?: ('queued' | 'processing' | 'review_ready' | 'importing' | 'completed' | 'failed') | null;
+  /**
+   * Total de páginas del fichero.
+   */
+  pdfTotalPages?: number | null;
+  /**
+   * Permite continuar la importación donde se quedó.
+   */
+  lastProcessedPage?: number | null;
   totalPages?: number | null;
   processedPages?: number | null;
   progressPercent?: number | null;
@@ -934,6 +942,8 @@ export interface PdfImportsSelect<T extends boolean = true> {
   pageRangeTo?: T;
   maxPages?: T;
   status?: T;
+  pdfTotalPages?: T;
+  lastProcessedPage?: T;
   totalPages?: T;
   processedPages?: T;
   progressPercent?: T;

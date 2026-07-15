@@ -68,10 +68,10 @@ function buildQuickActions(primary: string, accent: string, text: string) {
   // pero todos coherentes con la marca del cliente.
   return [
     {
-      href: '/admin/collections/pdf-imports/create',
-      title: 'Subir un catálogo en PDF',
+      href: '/pdf-imports/new',
+      title: 'Importar un catálogo en PDF',
       description:
-        'Importa el catálogo de un fabricante en PDF y se convertirá automáticamente en azulejos.',
+        'Sube el catálogo de un fabricante y se convertirá automáticamente en azulejos.',
       Icon: FileText,
       color: primary,
     },

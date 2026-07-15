@@ -34,6 +34,9 @@ type Candidate = {
   reviewStatus: 'pending' | 'accepted' | 'rejected'
   /** Tile ya creado a partir de este candidato — evita duplicados al republicar. */
   publishedTileId?: number | string | null
+  /** Decisión tomada en revisión cuando ya existe un tile con este nombre. */
+  duplicateAction?: 'create' | 'update'
+  duplicateTileId?: number | string | null
 }
 
 function slugify(s: string): string {
@@ -137,7 +140,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   const createdTileIds: (number | string)[] = []
-  /** candidato → tile creado, para enlazar ambientes después */
+  let updatedCount = 0
+  /** candidato → tile creado o actualizado, para enlazar ambientes después */
   const createdPairs: Array<{ candidate: Candidate; tileId: number | string }> = []
   const errors: string[] = []
 
@@ -195,6 +199,43 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       const mainImageId = ambientId ?? textureId
       const textureImageId = textureId ?? mainImageId
 
+      // El tile solo enlaza un formato/acabado; el resto de datos extraídos
+      // (todos los formatos, acabados, código RAL/NCS…) van a attributesJson
+      // para no perderlos.
+      const attributes: Record<string, unknown> = {}
+      if ((c.formats?.length || 0) > 1) attributes.formats = c.formats
+      if ((c.finishes?.length || 0) > 1) attributes.finishes = c.finishes
+      if ((c.specialPieces?.length || 0) > 0) attributes.specialPieces = c.specialPieces
+      if (c.colorCode) attributes.colorCode = c.colorCode
+      if (c.seriesName) attributes.series = c.seriesName
+
+      const sharedData = {
+        sku: c.sku,
+        description: c.description,
+        mainImage: mainImageId,
+        textureImage: textureImageId,
+        colors: colorDoc ? [colorDoc.id] : [],
+        finish: finishDoc?.id,
+        format: formatDoc?.id,
+        usages: usageDocs.filter(Boolean).map((d: any) => d.id),
+        rooms: roomDocs.filter(Boolean).map((d: any) => d.id),
+        attributesJson: Object.keys(attributes).length > 0 ? attributes : undefined,
+      }
+
+      // Duplicado con decisión "actualizar": refrescamos el tile existente con
+      // los datos e imágenes del catálogo nuevo, sin crear otro ni tocar su
+      // slug (las URLs públicas no cambian).
+      if (c.duplicateAction === 'update' && c.duplicateTileId != null) {
+        await payload.update({
+          collection: 'tiles',
+          id: c.duplicateTileId,
+          data: sharedData as any,
+        })
+        updatedCount++
+        createdPairs.push({ candidate: c, tileId: c.duplicateTileId })
+        continue
+      }
+
       const baseSlug = slugify(c.variantName)
       // Garantizar unicidad de slug
       let slug = baseSlug
@@ -209,36 +250,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         slug = `${baseSlug}-${i++}`
       }
 
-      // El tile solo enlaza un formato/acabado; el resto de datos extraídos
-      // (todos los formatos, acabados, código RAL/NCS…) van a attributesJson
-      // para no perderlos.
-      const attributes: Record<string, unknown> = {}
-      if ((c.formats?.length || 0) > 1) attributes.formats = c.formats
-      if ((c.finishes?.length || 0) > 1) attributes.finishes = c.finishes
-      if ((c.specialPieces?.length || 0) > 0) attributes.specialPieces = c.specialPieces
-      if (c.colorCode) attributes.colorCode = c.colorCode
-      if (c.seriesName) attributes.series = c.seriesName
-
       const tile = await payload.create({
         collection: 'tiles',
         data: {
+          ...sharedData,
           name: c.variantName,
           slug,
-          sku: c.sku,
-          description: c.description,
-          mainImage: mainImageId,
-          textureImage: textureImageId,
           brand: brandId,
           collection: collectionId,
-          colors: colorDoc ? [colorDoc.id] : [],
-          finish: finishDoc?.id,
-          format: formatDoc?.id,
-          usages: usageDocs.filter(Boolean).map((d: any) => d.id),
-          rooms: roomDocs.filter(Boolean).map((d: any) => d.id),
           published: true,
           featured: false,
           aiReady: false,
-          attributesJson: Object.keys(attributes).length > 0 ? attributes : undefined,
         } as any,
       })
 
@@ -343,7 +365,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     id,
     data: {
       ...(stillProcessing ? {} : { status: 'completed', completedAt: new Date().toISOString() }),
-      currentStep: `Publicados ${createdTileIds.length} azulejos y ${createdAmbients} ambientes. ${errors.length} avisos.${stillProcessing ? ' La lectura del PDF sigue en marcha…' : ''}`,
+      currentStep: `Publicados ${createdTileIds.length} azulejos nuevos${updatedCount > 0 ? `, ${updatedCount} actualizados` : ''} y ${createdAmbients} ambientes. ${errors.length} avisos.${stillProcessing ? ' La lectura del PDF sigue en marcha…' : ''}`,
       // Acumulamos sobre publicaciones anteriores (publicar dos veces no debe
       // borrar el vínculo con los tiles de la primera tanda)
       createdTiles: [
@@ -358,8 +380,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   return NextResponse.json({
     ok: true,
     createdCount: createdTileIds.length,
+    updatedCount,
     createdAmbients,
     createdTileIds,
+    publishedByCandidate: Object.fromEntries(publishedByCandidate),
     errors,
   })
 }
