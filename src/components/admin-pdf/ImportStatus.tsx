@@ -174,7 +174,7 @@ export function ImportStatus({ initial }: { initial: Progress }) {
   return (
     <div className="container py-6 max-w-4xl">
       <nav className="text-xs text-muted-foreground mb-2">
-        <Link href="/pdf-imports" className="hover:underline">
+        <Link href="/ventas/importar" className="hover:underline">
           ← Mis importaciones
         </Link>
       </nav>
@@ -255,7 +255,7 @@ export function ImportStatus({ initial }: { initial: Progress }) {
           )}
           {canReview && (
             <Link
-              href={`/pdf-imports/${p.id}/review`}
+              href={`/ventas/importar/${p.id}/revisar`}
               className="px-4 py-2 rounded-md border border-border text-sm font-medium hover:bg-muted"
             >
               Revisar {p.candidatesCount} azulejos →

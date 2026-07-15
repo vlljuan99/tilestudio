@@ -503,7 +503,7 @@ export interface Generation {
   createdAt: string;
 }
 /**
- * Catálogos PDF de tus proveedores (Pamesa, NewTiles, etc.). Para importar uno nuevo usa el asistente en /pdf-imports/new — esta vista es el detalle técnico de cada importación.
+ * Catálogos PDF de tus proveedores (Pamesa, NewTiles, etc.). Para importar uno nuevo usa la zona de ventas (/ventas/importar) — esta vista es el detalle técnico de cada importación.
  *
  * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "pdf-imports".

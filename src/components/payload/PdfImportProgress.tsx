@@ -148,17 +148,17 @@ export default function PdfImportProgress() {
         )}
 
         <a
-          href={`/pdf-imports/${doc.id}`}
+          href={`/ventas/importar/${doc.id}`}
           target="_blank"
           rel="noopener noreferrer"
           style={{ ...style.btn, ...style.btnSecondary, textDecoration: 'none' }}
         >
-          Abrir vista de importación →
+          Abrir en la zona de ventas →
         </a>
 
         {canReview && !isCompleted && (
           <a
-            href={`/pdf-imports/${id}/review`}
+            href={`/ventas/importar/${id}/revisar`}
             target="_blank"
             rel="noopener noreferrer"
             style={{ ...style.btn, ...style.btnSecondary, textDecoration: 'none' }}

@@ -200,10 +200,10 @@ export function CandidateReview({ importId, importDoc, duplicates }: Props) {
   return (
     <div className="container py-6 max-w-5xl">
       <nav className="text-xs text-muted-foreground mb-2 flex gap-3">
-        <Link href={`/pdf-imports/${importId}`} className="hover:underline">
+        <Link href={`/ventas/importar/${importId}`} className="hover:underline">
           ← Estado de la importación
         </Link>
-        <Link href="/pdf-imports" className="hover:underline">
+        <Link href="/ventas/importar" className="hover:underline">
           Mis importaciones
         </Link>
       </nav>

@@ -23,7 +23,7 @@ export const PdfImports: CollectionConfig = {
       'createdAt',
     ],
     description:
-      'Catálogos PDF de tus proveedores (Pamesa, NewTiles, etc.). Para importar uno nuevo usa el asistente en /pdf-imports/new — esta vista es el detalle técnico de cada importación.',
+      'Catálogos PDF de tus proveedores (Pamesa, NewTiles, etc.). Para importar uno nuevo usa la zona de ventas (/ventas/importar) — esta vista es el detalle técnico de cada importación.',
   },
   access: {
     read: ({ req }) => Boolean(req.user),

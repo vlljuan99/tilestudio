@@ -128,7 +128,7 @@ export function ImportWizard({ brands }: Props) {
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data?.error || 'No se pudo arrancar la importación.')
-      router.push(`/pdf-imports/${upload.importId}`)
+      router.push(`/ventas/importar/${upload.importId}`)
     } catch (err) {
       setStartError((err as Error).message)
       setStarting(false)
@@ -145,7 +145,7 @@ export function ImportWizard({ brands }: Props) {
   return (
     <div className="container py-6 max-w-3xl">
       <nav className="text-xs text-muted-foreground mb-2">
-        <Link href="/pdf-imports" className="hover:underline">
+        <Link href="/ventas/importar" className="hover:underline">
           ← Mis importaciones
         </Link>
       </nav>

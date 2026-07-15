@@ -68,10 +68,10 @@ function buildQuickActions(primary: string, accent: string, text: string) {
   // pero todos coherentes con la marca del cliente.
   return [
     {
-      href: '/pdf-imports/new',
-      title: 'Importar un catálogo en PDF',
+      href: '/ventas',
+      title: 'Abrir la zona de ventas',
       description:
-        'Sube el catálogo de un fabricante y se convertirá automáticamente en azulejos.',
+        'El panel del día a día: importar catálogos PDF, azulejos, ambientes y clientes interesados.',
       Icon: FileText,
       color: primary,
     },
