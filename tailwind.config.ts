@@ -2,8 +2,12 @@ import type { Config } from 'tailwindcss'
 
 const config: Config = {
   darkMode: ['class'],
+  // Todo src/app, no solo (frontend): las zonas con su propio route group
+  // (p. ej. (ventas)) también usan Tailwind, y si no se escanean, sus clases
+  // exclusivas —el ancho del sidebar, sin ir más lejos— no se generan y el
+  // layout se rompe en silencio.
   content: [
-    './src/app/(frontend)/**/*.{js,ts,jsx,tsx,mdx}',
+    './src/app/**/*.{js,ts,jsx,tsx,mdx}',
     './src/components/**/*.{js,ts,jsx,tsx,mdx}',
   ],
   theme: {
