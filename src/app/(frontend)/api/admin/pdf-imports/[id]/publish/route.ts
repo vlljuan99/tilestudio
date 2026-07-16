@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getPayload } from 'payload'
 import config from '@payload-config'
 
+import { brandKey, canonicalColorName, normalizeKey, titleCaseName } from '@/lib/taxonomy'
+
 export const runtime = 'nodejs'
 export const maxDuration = 300
 
@@ -49,21 +51,69 @@ function slugify(s: string): string {
     .slice(0, 80)
 }
 
+/**
+ * Busca un doc por nombre y, si no existe, lo crea.
+ *
+ * El emparejado es NORMALIZADO, no exacto: la IA lee la misma marca como
+ * "PAMESA cerámica" en un catálogo y "Pamesa" en otro, y con match exacto
+ * salían dos marcas con la mitad de los azulejos cada una. `keyOf` decide qué
+ * cuenta como "el mismo" según la colección.
+ *
+ * La lista de la colección se cachea por request (`cache`): publicar 300
+ * azulejos hacía 300 find() por taxonomía, y además dos candidatos con la
+ * misma marca creaban dos docs si el segundo se resolvía antes de que el
+ * primero estuviera escrito.
+ */
 async function findOrCreateByName(
   payload: any,
   collection: string,
   name: string,
+  cache: TaxonomyCache,
   extra: Record<string, any> = {},
 ) {
-  if (!name) return null
-  const slug = slugify(name)
-  const existing = await payload.find({
-    collection,
-    where: { or: [{ slug: { equals: slug } }, { name: { equals: name } }] },
-    limit: 1,
-  })
-  if (existing.docs[0]) return existing.docs[0]
-  return payload.create({ collection, data: { name, slug, ...extra } })
+  if (!name?.trim()) return null
+  const keyOf = collection === 'brands' ? brandKey : normalizeKey
+  const key = keyOf(name)
+  if (!key) return null
+
+  let index = cache.get(collection)
+  if (!index) {
+    index = new Map()
+    const all = await payload.find({ collection, limit: 1000, depth: 0 })
+    for (const doc of all.docs as any[]) {
+      const k = keyOf(doc.name)
+      if (k && !index.has(k)) index.set(k, doc)
+    }
+    cache.set(collection, index)
+  }
+
+  const hit = index.get(key)
+  if (hit) return hit
+
+  // Slug único: dos nombres distintos pueden compartir slug ("Cōre" y "Core").
+  let slug = slugify(name)
+  const taken = await payload.find({ collection, where: { slug: { equals: slug } }, limit: 1 })
+  if (taken.docs.length > 0) slug = `${slug}-${Math.random().toString(36).slice(2, 6)}`
+
+  const created = await payload.create({ collection, data: { name, slug, ...extra } })
+  index.set(key, created)
+  return created
+}
+
+/** Índice normalizado por colección, vivo durante una publicación. */
+type TaxonomyCache = Map<string, Map<string, any>>
+
+/**
+ * Color de filtro para el catálogo a partir del texto libre de la IA.
+ *
+ * "blanco con vetas grisáceas", "gris perlado", "marfil/beige claro"… son
+ * matices que al cliente final no le sirven para filtrar: se agrupan en el
+ * color canónico. Si no se reconoce (p. ej. la IA coló un nombre de serie),
+ * se respeta el texto tal cual y ya se corregirá en revisión.
+ */
+async function resolveColor(payload: any, raw: string, cache: TaxonomyCache) {
+  const canonical = canonicalColorName(raw)
+  return findOrCreateByName(payload, 'colors', canonical ?? titleCaseName(raw), cache, { hex: null })
 }
 
 async function uploadFromUrl(payload: any, url: string, name: string, alt: string) {
@@ -127,6 +177,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     } as any,
   })
 
+  const taxonomy: TaxonomyCache = new Map()
+
   // Marca: usar la del import si está, si no la detectada en candidatos
   let brandId: number | string | null = null
   if (importDoc.brand) {
@@ -134,7 +186,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   } else {
     const brandName = accepted.find((c) => c.brand)?.brand
     if (brandName) {
-      const brand = await findOrCreateByName(payload, 'brands', brandName)
+      const brand = await findOrCreateByName(payload, 'brands', brandName, taxonomy)
       brandId = brand?.id ?? null
     }
   }
@@ -147,30 +199,30 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   for (const c of accepted) {
     try {
-      // Taxonomías
-      const colorDoc = c.dominantColor
-        ? await findOrCreateByName(payload, 'colors', c.dominantColor, {
-            hex: null,
-          })
-        : null
+      // Taxonomías. En serie a propósito: en paralelo, dos candidatos con el
+      // mismo valor nuevo (misma serie, mismo acabado) crean dos docs porque
+      // ninguno ve todavía el del otro en la caché.
+      const colorDoc = c.dominantColor ? await resolveColor(payload, c.dominantColor, taxonomy) : null
       const finishDoc = c.finishes?.[0]
-        ? await findOrCreateByName(payload, 'finishes', c.finishes[0])
+        ? await findOrCreateByName(payload, 'finishes', c.finishes[0], taxonomy)
         : null
       const formatDoc = c.formats?.[0]
-        ? await findOrCreateByName(payload, 'formats', c.formats[0])
+        ? await findOrCreateByName(payload, 'formats', c.formats[0], taxonomy)
         : null
 
-      const usageDocs = await Promise.all(
-        (c.usage || []).map((u) => findOrCreateByName(payload, 'usages', u)),
-      )
-      const roomDocs = await Promise.all(
-        (c.rooms || []).map((r) => findOrCreateByName(payload, 'rooms', r)),
-      )
+      const usageDocs: any[] = []
+      for (const u of c.usage || []) {
+        usageDocs.push(await findOrCreateByName(payload, 'usages', u, taxonomy))
+      }
+      const roomDocs: any[] = []
+      for (const r of c.rooms || []) {
+        roomDocs.push(await findOrCreateByName(payload, 'rooms', r, taxonomy))
+      }
 
       // Colección
       let collectionId: number | string | null = null
       if (c.collection) {
-        const col = await findOrCreateByName(payload, 'collections', c.collection, {
+        const col = await findOrCreateByName(payload, 'collections', c.collection, taxonomy, {
           brand: brandId,
         })
         collectionId = col?.id ?? null
@@ -322,7 +374,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       }
 
       const roomName = pairs.flatMap((p) => p.candidate.rooms || [])[0]
-      const roomDoc = roomName ? await findOrCreateByName(payload, 'rooms', roomName) : null
+      const roomDoc = roomName ? await findOrCreateByName(payload, 'rooms', roomName, taxonomy) : null
 
       await payload.create({
         collection: 'ambients',

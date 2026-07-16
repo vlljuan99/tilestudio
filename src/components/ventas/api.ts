@@ -5,6 +5,7 @@
  * Todo va con la cookie de sesión; los errores se normalizan a un Error con
  * mensaje legible (Payload devuelve {errors:[{message}]}).
  */
+import { brandKey, normalizeKey } from '@/lib/taxonomy'
 
 export function slugify(s: string): string {
   return s
@@ -99,6 +100,22 @@ export function uploadMedia(
 }
 
 export type Option = { id: number | string; name: string }
+
+/**
+ * Busca entre las opciones ya existentes una que sea "la misma" que `name`
+ * aunque esté escrita distinta ("PAMESA cerámica" vs "Pamesa"), para poder
+ * preguntar antes de crear un duplicado.
+ */
+export function findSimilarOption(
+  options: Option[],
+  name: string,
+  collection: string,
+): Option | undefined {
+  const keyOf = collection === 'brands' ? brandKey : normalizeKey
+  const key = keyOf(name)
+  if (!key) return undefined
+  return options.find((o) => keyOf(o.name) === key)
+}
 
 /** Carga las opciones (id+name) de una colección de referencia, ordenadas. */
 export async function loadOptions(collection: string, titleField = 'name'): Promise<Option[]> {

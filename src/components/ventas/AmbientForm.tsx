@@ -10,6 +10,7 @@ import { useRouter } from 'next/navigation'
 
 import { apiCreate, apiDelete, apiGet, apiUpdate, slugify } from './api'
 import { ImageField, RelationSelect, TextArea, TextField, Toggle } from './fields'
+import { useUnsavedWarning } from './useUnsavedWarning'
 
 type MediaRef = { id: number | string; url: string } | null
 
@@ -51,10 +52,18 @@ const SURFACES = [
 
 export function AmbientForm({ initial }: { initial: AmbientFormValues }) {
   const router = useRouter()
-  const [v, setV] = useState<AmbientFormValues>(initial)
+  const [v, setVRaw] = useState<AmbientFormValues>(initial)
   const [busy, setBusy] = useState(false)
+  const [dirty, setDirty] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const isNew = initial.id == null
+
+  useUnsavedWarning(dirty)
+
+  const setV: typeof setVRaw = (updater) => {
+    setVRaw(updater)
+    setDirty(true)
+  }
 
   async function save(e: React.FormEvent) {
     e.preventDefault()
@@ -79,6 +88,8 @@ export function AmbientForm({ initial }: { initial: AmbientFormValues }) {
       } else {
         await apiUpdate('ambients', initial.id!, data)
       }
+      // Antes de navegar: si no, el aviso de "sin guardar" salta al salir.
+      setDirty(false)
       router.push('/ventas/ambientes')
       router.refresh()
     } catch (err) {
@@ -91,6 +102,7 @@ export function AmbientForm({ initial }: { initial: AmbientFormValues }) {
     if (!initial.id) return
     if (!window.confirm(`¿Borrar el ambiente "${initial.title}"?`)) return
     setBusy(true)
+    setDirty(false)
     try {
       await apiDelete('ambients', initial.id)
       router.push('/ventas/ambientes')

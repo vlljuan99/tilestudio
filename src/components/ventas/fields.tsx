@@ -7,7 +7,7 @@
  */
 import { useEffect, useRef, useState } from 'react'
 
-import { createOption, loadOptions, uploadMedia, type Option } from './api'
+import { createOption, findSimilarOption, loadOptions, uploadMedia, type Option } from './api'
 
 export function TextField({
   label,
@@ -94,9 +94,101 @@ export function Toggle({
 }
 
 /**
+ * Diálogo de alta rápida de un valor de taxonomía sin salir del formulario.
+ *
+ * Avisa si ya existe uno equivalente escrito de otra forma ("PAMESA cerámica"
+ * cuando ya hay "Pamesa") — así el catálogo no se llena de marcas repetidas.
+ * Para marcas permite además subir el logo en el momento.
+ */
+function CreateOptionDialog({
+  label,
+  collection,
+  options,
+  onCancel,
+  onCreated,
+  onPickExisting,
+}: {
+  label: string
+  collection: string
+  options: Option[]
+  onCancel: () => void
+  onCreated: (opt: Option) => void
+  onPickExisting: (opt: Option) => void
+}) {
+  const [name, setName] = useState('')
+  const [logo, setLogo] = useState<{ id: number | string; url: string } | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const similar = name.trim() ? findSimilarOption(options, name, collection) : undefined
+  const isBrand = collection === 'brands'
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!name.trim()) return
+    setBusy(true)
+    setError(null)
+    try {
+      const extra = isBrand && logo ? { logo: logo.id } : {}
+      onCreated(await createOption(collection, name.trim(), extra))
+    } catch (err) {
+      setError((err as Error).message)
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 grid place-items-center p-4">
+      <div className="bg-background border border-border rounded-lg p-5 w-full max-w-sm space-y-4">
+        <p className="font-semibold">Añadir {label.toLowerCase()}</p>
+
+        <TextField label="Nombre" required value={name} onChange={setName} />
+
+        {similar && (
+          <div className="p-3 rounded-md bg-amber-500/10 text-xs space-y-2">
+            <p>
+              Ya existe <strong>{similar.name}</strong>, que parece la misma. Si creas otra, el
+              catálogo quedará dividido entre las dos.
+            </p>
+            <button
+              type="button"
+              onClick={() => onPickExisting(similar)}
+              className="px-2.5 py-1 rounded-md bg-primary text-primary-foreground"
+            >
+              Usar {similar.name}
+            </button>
+          </div>
+        )}
+
+        {isBrand && <ImageField label="Logo (opcional)" value={logo} onChange={setLogo} />}
+
+        {error && <p className="text-sm text-destructive">{error}</p>}
+
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={submit}
+            disabled={busy || !name.trim()}
+            className="px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50"
+          >
+            {busy ? 'Creando…' : 'Crear'}
+          </button>
+          <button
+            type="button"
+            onClick={onCancel}
+            className="px-4 py-2 rounded-md border border-border text-sm hover:bg-muted"
+          >
+            Cancelar
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/**
  * Select de relación (marca, formato, acabado…) que permite crear el valor al
- * vuelo: la opción "＋ Crear…" pide el nombre y lo da de alta sin salir del
- * formulario.
+ * vuelo: la opción "＋ Crear…" abre el diálogo de alta sin salir del formulario.
  */
 export function RelationSelect({
   label,
@@ -113,6 +205,7 @@ export function RelationSelect({
 }) {
   const [options, setOptions] = useState<Option[]>([])
   const [loaded, setLoaded] = useState(false)
+  const [creating, setCreating] = useState(false)
 
   useEffect(() => {
     loadOptions(collection)
@@ -121,17 +214,9 @@ export function RelationSelect({
       .finally(() => setLoaded(true))
   }, [collection])
 
-  async function handleChange(v: string) {
+  function handleChange(v: string) {
     if (v === '__create__') {
-      const name = window.prompt(`Nombre de ${label.toLowerCase()} nuevo:`)
-      if (!name?.trim()) return
-      try {
-        const opt = await createOption(collection, name.trim())
-        setOptions((arr) => [...arr, opt].sort((a, b) => a.name.localeCompare(b.name)))
-        onChange(opt.id)
-      } catch (err) {
-        alert((err as Error).message)
-      }
+      setCreating(true)
       return
     }
     onChange(v === '' ? null : options.find((o) => String(o.id) === v)?.id ?? null)
@@ -153,6 +238,24 @@ export function RelationSelect({
         ))}
         <option value="__create__">＋ Crear…</option>
       </select>
+
+      {creating && (
+        <CreateOptionDialog
+          label={label}
+          collection={collection}
+          options={options}
+          onCancel={() => setCreating(false)}
+          onPickExisting={(opt) => {
+            onChange(opt.id)
+            setCreating(false)
+          }}
+          onCreated={(opt) => {
+            setOptions((arr) => [...arr, opt].sort((a, b) => a.name.localeCompare(b.name)))
+            onChange(opt.id)
+            setCreating(false)
+          }}
+        />
+      )}
     </label>
   )
 }
@@ -170,6 +273,7 @@ export function RelationMultiSelect({
   onChange: (v: (number | string)[]) => void
 }) {
   const [options, setOptions] = useState<Option[]>([])
+  const [creating, setCreating] = useState(false)
 
   useEffect(() => {
     loadOptions(collection)
@@ -179,22 +283,18 @@ export function RelationMultiSelect({
 
   const selected = options.filter((o) => values.some((v) => String(v) === String(o.id)))
 
-  async function add(v: string) {
+  function addId(id: number | string) {
+    if (!values.some((x) => String(x) === String(id))) onChange([...values, id])
+  }
+
+  function add(v: string) {
     if (v === '') return
     if (v === '__create__') {
-      const name = window.prompt(`Nombre de ${label.toLowerCase()} nuevo:`)
-      if (!name?.trim()) return
-      try {
-        const opt = await createOption(collection, name.trim())
-        setOptions((arr) => [...arr, opt].sort((a, b) => a.name.localeCompare(b.name)))
-        onChange([...values, opt.id])
-      } catch (err) {
-        alert((err as Error).message)
-      }
+      setCreating(true)
       return
     }
     const opt = options.find((o) => String(o.id) === v)
-    if (opt && !values.some((x) => String(x) === String(opt.id))) onChange([...values, opt.id])
+    if (opt) addId(opt.id)
   }
 
   return (
@@ -233,6 +333,24 @@ export function RelationMultiSelect({
           ))}
         <option value="__create__">＋ Crear…</option>
       </select>
+
+      {creating && (
+        <CreateOptionDialog
+          label={label}
+          collection={collection}
+          options={options}
+          onCancel={() => setCreating(false)}
+          onPickExisting={(opt) => {
+            addId(opt.id)
+            setCreating(false)
+          }}
+          onCreated={(opt) => {
+            setOptions((arr) => [...arr, opt].sort((a, b) => a.name.localeCompare(b.name)))
+            addId(opt.id)
+            setCreating(false)
+          }}
+        />
+      )}
     </div>
   )
 }

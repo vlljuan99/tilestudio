@@ -18,6 +18,7 @@ import {
   TextField,
   Toggle,
 } from './fields'
+import { useUnsavedWarning } from './useUnsavedWarning'
 
 type MediaRef = { id: number | string; url: string } | null
 
@@ -68,11 +69,15 @@ export function TileForm({ initial }: { initial: TileFormValues }) {
   const router = useRouter()
   const [v, setV] = useState<TileFormValues>(initial)
   const [busy, setBusy] = useState(false)
+  const [dirty, setDirty] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const isNew = initial.id == null
 
+  useUnsavedWarning(dirty)
+
   function set<K extends keyof TileFormValues>(key: K, value: TileFormValues[K]) {
     setV((prev) => ({ ...prev, [key]: value }))
+    setDirty(true)
   }
 
   async function save(e: React.FormEvent) {
@@ -108,6 +113,8 @@ export function TileForm({ initial }: { initial: TileFormValues }) {
       } else {
         await apiUpdate('tiles', initial.id!, data)
       }
+      // Antes de navegar: si no, el aviso de "sin guardar" salta al salir.
+      setDirty(false)
       router.push('/ventas/azulejos')
       router.refresh()
     } catch (err) {
@@ -120,6 +127,7 @@ export function TileForm({ initial }: { initial: TileFormValues }) {
     if (!initial.id) return
     if (!window.confirm(`¿Borrar "${initial.name}"? Desaparecerá de la web.`)) return
     setBusy(true)
+    setDirty(false)
     try {
       await apiDelete('tiles', initial.id)
       router.push('/ventas/azulejos')

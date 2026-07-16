@@ -14,6 +14,7 @@ const NAV = [
   { href: '/ventas/ambientes', label: 'Ambientes', icon: '🛋' },
   { href: '/ventas/importar', label: 'Importar catálogos', icon: '⇪' },
   { href: '/ventas/clientes', label: 'Clientes interesados', icon: '☏' },
+  { href: '/ventas/selecciones', label: 'Selecciones enviadas', icon: '↗' },
   { href: '/ventas/etiquetas', label: 'Etiquetas', icon: '#' },
 ]
 

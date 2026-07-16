@@ -21,6 +21,7 @@ import { TileCollections } from './collections/Collections'
 import { Tiles } from './collections/Tiles'
 import { Ambients } from './collections/Ambients'
 import { Leads } from './collections/Leads'
+import { Selections } from './collections/Selections'
 import { SimulatorSessions } from './collections/SimulatorSessions'
 import { Generations } from './collections/Generations'
 import { PdfImports } from './collections/PdfImports'
@@ -168,6 +169,7 @@ export default buildConfig({
     Rooms,
     // Comercial
     Leads,
+    Selections,
     // Simulador
     SimulatorSessions,
     Generations,

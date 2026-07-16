@@ -77,6 +77,7 @@ export interface Config {
     usages: Usage;
     rooms: Room;
     leads: Lead;
+    selections: Selection;
     'simulator-sessions': SimulatorSession;
     generations: Generation;
     'pdf-imports': PdfImport;
@@ -99,6 +100,7 @@ export interface Config {
     usages: UsagesSelect<false> | UsagesSelect<true>;
     rooms: RoomsSelect<false> | RoomsSelect<true>;
     leads: LeadsSelect<false> | LeadsSelect<true>;
+    selections: SelectionsSelect<false> | SelectionsSelect<true>;
     'simulator-sessions': SimulatorSessionsSelect<false> | SimulatorSessionsSelect<true>;
     generations: GenerationsSelect<false> | GenerationsSelect<true>;
     'pdf-imports': PdfImportsSelect<false> | PdfImportsSelect<true>;
@@ -438,6 +440,62 @@ export interface Lead {
   createdAt: string;
 }
 /**
+ * Selecciones de azulejos que los comerciales han enviado a clientes. Se crean desde la zona de ventas.
+ *
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "selections".
+ */
+export interface Selection {
+  id: number;
+  /**
+   * Lo que verá el cliente como encabezado.
+   */
+  title: string;
+  /**
+   * Parte secreta del enlace. Quien lo tenga puede ver la selección.
+   */
+  token: string;
+  /**
+   * Para saber a quién se la mandaste. Opcional.
+   */
+  clientName?: string | null;
+  note?: string | null;
+  tiles: (number | Tile)[];
+  createdBy?: (number | null) | User;
+  viewCount?: number | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * Las personas que pueden entrar a esta zona de administración. Crea aquí a tus comerciales o colaboradores para que puedan responder a los clientes interesados.
+ *
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "users".
+ */
+export interface User {
+  id: number;
+  name?: string | null;
+  role?: ('admin' | 'editor') | null;
+  updatedAt: string;
+  createdAt: string;
+  email: string;
+  resetPasswordToken?: string | null;
+  resetPasswordExpiration?: string | null;
+  salt?: string | null;
+  hash?: string | null;
+  loginAttempts?: number | null;
+  lockUntil?: string | null;
+  sessions?:
+    | {
+        id: string;
+        createdAt?: string | null;
+        expiresAt: string;
+      }[]
+    | null;
+  password?: string | null;
+  collection: 'users';
+}
+/**
  * Información técnica de las sesiones del simulador. No necesitas usar esto normalmente.
  *
  * This interface was referenced by `Config`'s JSON-Schema
@@ -586,35 +644,6 @@ export interface PdfImport {
   createdAt: string;
 }
 /**
- * Las personas que pueden entrar a esta zona de administración. Crea aquí a tus comerciales o colaboradores para que puedan responder a los clientes interesados.
- *
- * This interface was referenced by `Config`'s JSON-Schema
- * via the `definition` "users".
- */
-export interface User {
-  id: number;
-  name?: string | null;
-  role?: ('admin' | 'editor') | null;
-  updatedAt: string;
-  createdAt: string;
-  email: string;
-  resetPasswordToken?: string | null;
-  resetPasswordExpiration?: string | null;
-  salt?: string | null;
-  hash?: string | null;
-  loginAttempts?: number | null;
-  lockUntil?: string | null;
-  sessions?:
-    | {
-        id: string;
-        createdAt?: string | null;
-        expiresAt: string;
-      }[]
-    | null;
-  password?: string | null;
-  collection: 'users';
-}
-/**
  * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "payload-kv".
  */
@@ -677,6 +706,10 @@ export interface PayloadLockedDocument {
     | ({
         relationTo: 'leads';
         value: number | Lead;
+      } | null)
+    | ({
+        relationTo: 'selections';
+        value: number | Selection;
       } | null)
     | ({
         relationTo: 'simulator-sessions';
@@ -894,6 +927,21 @@ export interface LeadsSelect<T extends boolean = true> {
   sessionId?: T;
   status?: T;
   consentAccepted?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "selections_select".
+ */
+export interface SelectionsSelect<T extends boolean = true> {
+  title?: T;
+  token?: T;
+  clientName?: T;
+  note?: T;
+  tiles?: T;
+  createdBy?: T;
+  viewCount?: T;
   updatedAt?: T;
   createdAt?: T;
 }

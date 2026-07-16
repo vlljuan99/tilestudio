@@ -2,13 +2,17 @@
 
 /**
  * Listado de azulejos para comerciales: tarjetas con foto, búsqueda por
- * nombre/SKU, filtro por marca y por publicado, paginación. Todo contra la
- * REST API de Payload con la sesión del navegador.
+ * nombre/SKU, filtro por marca y por publicado, paginación y acciones en lote
+ * (publicar, despublicar, asignar marca, compartir con un cliente, borrar).
+ *
+ * Con catálogos de cientos de azulejos importados de un PDF, entrar uno a uno
+ * para publicarlos no es viable: el lote es la forma normal de trabajar aquí.
  */
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 
-import { apiGet, loadOptions, type Option } from './api'
+import { apiDelete, apiGet, apiUpdate, loadOptions, type Option } from './api'
+import { ShareDialog } from './ShareDialog'
 
 type Tile = {
   id: number | string
@@ -31,6 +35,11 @@ export function TilesList() {
   const [onlyUnpublished, setOnlyUnpublished] = useState(false)
   const [brands, setBrands] = useState<Option[]>([])
   const [loading, setLoading] = useState(true)
+  // Guardamos el azulejo entero, no solo el id: la selección sobrevive al
+  // cambio de página y al compartir necesitamos nombre y foto de todos.
+  const [selected, setSelected] = useState<Map<string, Tile>>(new Map())
+  const [busy, setBusy] = useState<string | null>(null)
+  const [sharing, setSharing] = useState(false)
 
   useEffect(() => {
     loadOptions('brands').then(setBrands).catch(() => {})
@@ -63,6 +72,72 @@ export function TilesList() {
   }, [load, search])
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
+  const selectedTiles = [...selected.values()]
+  const allVisibleSelected = tiles.length > 0 && tiles.every((t) => selected.has(String(t.id)))
+
+  function toggle(tile: Tile) {
+    setSelected((s) => {
+      const next = new Map(s)
+      const k = String(tile.id)
+      if (next.has(k)) next.delete(k)
+      else next.set(k, tile)
+      return next
+    })
+  }
+
+  function toggleAllVisible() {
+    setSelected((s) => {
+      const next = new Map(s)
+      if (allVisibleSelected) tiles.forEach((t) => next.delete(String(t.id)))
+      else tiles.forEach((t) => next.set(String(t.id), t))
+      return next
+    })
+  }
+
+  /** Aplica un cambio a cada seleccionado. En serie: son PATCH baratos y así
+   *  un fallo suelto no deja el lote a medias sin saber por dónde iba. */
+  async function bulkUpdate(label: string, data: Record<string, unknown>) {
+    setBusy(label)
+    const ids = [...selected.keys()]
+    let failed = 0
+    for (const id of ids) {
+      try {
+        await apiUpdate('tiles', id, data)
+      } catch {
+        failed++
+      }
+    }
+    setBusy(null)
+    setSelected(new Map())
+    await load()
+    if (failed > 0) alert(`${failed} de ${ids.length} no se pudieron actualizar.`)
+  }
+
+  async function bulkDelete() {
+    const ids = [...selected.keys()]
+    if (
+      !window.confirm(
+        `¿Borrar ${ids.length} azulejo${ids.length === 1 ? '' : 's'}? Desaparecerán de la web y no se puede deshacer.`,
+      )
+    ) {
+      return
+    }
+    setBusy('borrar')
+    const errors: string[] = []
+    for (const id of ids) {
+      try {
+        await apiDelete('tiles', id)
+      } catch (err) {
+        errors.push((err as Error).message)
+      }
+    }
+    setBusy(null)
+    setSelected(new Map())
+    await load()
+    if (errors.length > 0) {
+      alert(`${errors.length} de ${ids.length} no se pudieron borrar:\n${errors[0]}`)
+    }
+  }
 
   return (
     <div>
@@ -106,6 +181,65 @@ export function TilesList() {
         <span className="text-sm text-muted-foreground">{total} azulejos</span>
       </div>
 
+      {/* Barra de acciones en lote: solo aparece cuando hay selección */}
+      {selected.size > 0 && (
+        <div className="sticky top-0 z-10 flex flex-wrap items-center gap-2 mb-4 p-3 border border-border rounded-md bg-background/95 backdrop-blur shadow-sm">
+          <span className="text-sm font-medium">
+            {selected.size} seleccionado{selected.size === 1 ? '' : 's'}
+          </span>
+          <button
+            onClick={() => setSelected(new Map())}
+            className="text-xs text-muted-foreground hover:underline"
+          >
+            quitar selección
+          </button>
+          <span className="flex-1" />
+          <button
+            onClick={() => setSharing(true)}
+            disabled={busy != null}
+            className="text-sm px-3 py-1.5 rounded-md bg-primary text-primary-foreground disabled:opacity-50"
+          >
+            Compartir con un cliente
+          </button>
+          <button
+            onClick={() => bulkUpdate('publicar', { published: true })}
+            disabled={busy != null}
+            className="text-sm px-3 py-1.5 border border-border rounded-md hover:bg-muted disabled:opacity-50"
+          >
+            {busy === 'publicar' ? 'Publicando…' : 'Publicar'}
+          </button>
+          <button
+            onClick={() => bulkUpdate('despublicar', { published: false })}
+            disabled={busy != null}
+            className="text-sm px-3 py-1.5 border border-border rounded-md hover:bg-muted disabled:opacity-50"
+          >
+            {busy === 'despublicar' ? 'Ocultando…' : 'Despublicar'}
+          </button>
+          <select
+            value=""
+            disabled={busy != null || brands.length === 0}
+            onChange={(e) => {
+              if (e.target.value) bulkUpdate('marca', { brand: e.target.value })
+            }}
+            className="text-sm h-[34px] border border-border rounded-md bg-background px-2 disabled:opacity-50"
+          >
+            <option value="">{busy === 'marca' ? 'Asignando…' : 'Asignar marca…'}</option>
+            {brands.map((b) => (
+              <option key={String(b.id)} value={String(b.id)}>
+                {b.name}
+              </option>
+            ))}
+          </select>
+          <button
+            onClick={bulkDelete}
+            disabled={busy != null}
+            className="text-sm px-3 py-1.5 border border-destructive/40 text-destructive rounded-md hover:bg-destructive/5 disabled:opacity-50"
+          >
+            {busy === 'borrar' ? 'Borrando…' : 'Borrar'}
+          </button>
+        </div>
+      )}
+
       {loading ? (
         <p className="text-muted-foreground text-sm py-12 text-center">Cargando…</p>
       ) : tiles.length === 0 ? (
@@ -113,39 +247,59 @@ export function TilesList() {
           <p className="text-muted-foreground text-sm">No hay azulejos con estos filtros.</p>
         </div>
       ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-          {tiles.map((t) => (
-            <Link
-              key={String(t.id)}
-              href={`/ventas/azulejos/${t.id}`}
-              className="border border-border rounded-lg overflow-hidden hover:shadow-md transition-shadow bg-card"
-            >
-              {t.mainImage?.url ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={t.mainImage.url}
-                  alt={t.name}
-                  className="w-full aspect-square object-cover"
-                />
-              ) : (
-                <div className="w-full aspect-square bg-muted grid place-items-center text-xs text-muted-foreground">
-                  sin foto
+        <>
+          <label className="flex items-center gap-2 text-sm mb-2 w-fit cursor-pointer">
+            <input type="checkbox" checked={allVisibleSelected} onChange={toggleAllVisible} />
+            Seleccionar los {tiles.length} de esta página
+          </label>
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+            {tiles.map((t) => {
+              const isSel = selected.has(String(t.id))
+              return (
+                <div
+                  key={String(t.id)}
+                  className={`relative border rounded-lg overflow-hidden bg-card transition-shadow ${
+                    isSel ? 'border-primary ring-2 ring-primary/30' : 'border-border hover:shadow-md'
+                  }`}
+                >
+                  <label
+                    className="absolute top-2 left-2 z-10 w-7 h-7 grid place-items-center rounded-md bg-background/90 border border-border cursor-pointer"
+                    title="Seleccionar"
+                  >
+                    <input type="checkbox" checked={isSel} onChange={() => toggle(t)} />
+                  </label>
+
+                  <Link href={`/ventas/azulejos/${t.id}`} className="block">
+                    {t.mainImage?.url ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={t.mainImage.url}
+                        alt={t.name}
+                        className="w-full aspect-square object-cover"
+                      />
+                    ) : (
+                      <div className="w-full aspect-square bg-muted grid place-items-center text-xs text-muted-foreground">
+                        sin foto
+                      </div>
+                    )}
+                    <div className="p-2.5">
+                      <p className="text-sm font-medium truncate">{t.name}</p>
+                      <p className="text-xs text-muted-foreground truncate">
+                        {[t.brand?.name, t.format?.name, t.sku].filter(Boolean).join(' · ') || '—'}
+                      </p>
+                      {t.published === false && (
+                        <span className="inline-block mt-1 text-[11px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-700">
+                          sin publicar
+                        </span>
+                      )}
+                    </div>
+                  </Link>
                 </div>
-              )}
-              <div className="p-2.5">
-                <p className="text-sm font-medium truncate">{t.name}</p>
-                <p className="text-xs text-muted-foreground truncate">
-                  {[t.brand?.name, t.format?.name, t.sku].filter(Boolean).join(' · ') || '—'}
-                </p>
-                {t.published === false && (
-                  <span className="inline-block mt-1 text-[11px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-700">
-                    sin publicar
-                  </span>
-                )}
-              </div>
-            </Link>
-          ))}
-        </div>
+              )
+            })}
+          </div>
+        </>
       )}
 
       {totalPages > 1 && (
@@ -168,6 +322,17 @@ export function TilesList() {
             Siguiente →
           </button>
         </div>
+      )}
+
+      {sharing && (
+        <ShareDialog
+          tiles={selectedTiles.map((t) => ({
+            id: t.id,
+            name: t.name,
+            imageUrl: t.mainImage?.url || null,
+          }))}
+          onClose={() => setSharing(false)}
+        />
       )}
     </div>
   )
